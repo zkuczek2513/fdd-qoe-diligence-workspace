@@ -9,9 +9,14 @@ plotly>=5.20,<7
 yfinance>=0.2.40
 anthropic>=0.40
 
-# Module 2 — SEC EDGAR ingestion and narrative analysis
-aiohttp>=3.9,<4
-lxml>=5.0,<6
+# Module 2 — SEC EDGAR ingestion.
+# Deliberately no lxml: it is a compiled extension whose wheels lag new Python
+# releases (no lxml 5.x publishes a cp314 wheel, so a capped pin forces a source
+# build that fails on hosts without libxml2 headers). edgar_client uses lxml when
+# it happens to be present and falls back to a regex HTML stripper otherwise —
+# the two produce byte-identical output on the filings tested, so the dependency
+# bought nothing and cost a deployment.
+aiohttp>=3.9,<5
 
-# Module 7 — report export
+# Module 7 — report export (pure Python, no build step)
 fpdf2>=2.7,<3

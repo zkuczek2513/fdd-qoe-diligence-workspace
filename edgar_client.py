@@ -35,6 +35,10 @@ except Exception as exc:  # pragma: no cover
     AIOHTTP_AVAILABLE = False
     AIOHTTP_IMPORT_ERROR = str(exc)
 
+# lxml is an optional accelerator, not a requirement. It is a compiled extension
+# whose wheels lag new Python releases, so it is deliberately absent from
+# requirements.txt; ``html_to_text`` falls back to a regex stripper that produces
+# equivalent output. Never make this import mandatory.
 try:  # pragma: no cover
     import lxml.html as lxml_html
 

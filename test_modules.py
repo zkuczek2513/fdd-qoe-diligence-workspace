@@ -83,6 +83,39 @@ def main() -> int:
     empty_metrics = nlp.readability("")
     check(is_missing(empty_metrics.average_sentence_length), "empty text yields NaN, not a crash")
 
+    section("1b. HTML parsing without the optional lxml accelerator")
+    import edgar_client as ec
+
+    sample_html = (
+        "<html><head><style>p{color:red}</style><script>var x=1;</script></head>"
+        "<body><div>Item&nbsp;1A. Risk Factors</div><p>Our revenue recognition "
+        "involves significant judgment under ASC 606.</p>"
+        "<span>Item 1B. Unresolved Staff Comments</span></body></html>"
+    )
+    original = ec.LXML_AVAILABLE
+    try:
+        ec.LXML_AVAILABLE = True
+        with_lxml = ec.html_to_text(sample_html)
+        ec.LXML_AVAILABLE = False
+        without_lxml = ec.html_to_text(sample_html)
+    finally:
+        ec.LXML_AVAILABLE = original
+
+    check(bool(without_lxml), "the regex fallback produces text when lxml is absent")
+    check(
+        "var x" not in without_lxml and "color:red" not in without_lxml,
+        "the fallback strips script and style content",
+    )
+    check("Risk Factors" in without_lxml, "the fallback preserves narrative text")
+    check(
+        "&nbsp;" not in without_lxml,
+        "the fallback decodes HTML entities",
+    )
+    check(
+        "ASC 606" in with_lxml and "ASC 606" in without_lxml,
+        "both parsers preserve the language the scanner keys on",
+    )
+
     section("2. Year-over-year delta")
     delta = risk.compare_sections(SAMPLE, PRIOR, "item_1a_risk_factors", "FY2025", "FY2024")
     check(0.0 < delta.similarity < 1.0, f"similarity computes ({delta.similarity:.6f})")

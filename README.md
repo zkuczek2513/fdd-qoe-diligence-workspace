@@ -408,7 +408,11 @@ no ambient loop. Three filings retrieve in roughly 1.5 seconds.
 
 ### Item extraction
 
-Filing HTML is flattened with `lxml` (falling back to a regex stripper), then items are located by
+Filing HTML is flattened with a regex stripper — `lxml` is used when present but is deliberately
+**not** a declared dependency. It is a compiled extension whose wheels lag new Python releases (no
+lxml 5.x publishes a `cp314` wheel, so a capped pin forces a source build that fails on hosts without
+libxml2 headers, which is exactly how it broke this deployment). Both parsers produce byte-identical
+output on the filings tested, so the dependency bought nothing. Items are then located by
 **scoring candidate boundary pairs** rather than taking the first or last heading match. This matters
 more than it sounds. An item heading appears several times in a filing:
 
