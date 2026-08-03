@@ -784,3 +784,129 @@ def severity_badge(severity: str) -> str:
     """Coloured marker for a risk severity."""
     markers = {"Low": "🟢", "Medium": "🟡", "High": "🟠", "Critical": "🔴"}
     return f"{markers.get(severity, '⚪')} **{severity}**"
+
+
+# --------------------------------------------------------------------------- #
+# Module 2 / Module 3 shared widgets
+# --------------------------------------------------------------------------- #
+
+
+def number_format_for(full_precision: bool) -> str:
+    """printf mask for an editor column — display only."""
+    return number_format(full_precision)
+
+
+def category_bar_chart(totals: pd.DataFrame) -> go.Figure | None:
+    """Horizontal bar of risk mentions by category."""
+    if totals is None or totals.empty:
+        return None
+
+    ordered = totals.sort_values("Mentions", ascending=True)
+    figure = go.Figure(
+        go.Bar(
+            x=[as_float(value) for value in ordered["Mentions"].tolist()],
+            y=[str(label) for label in ordered["Risk Category"].tolist()],
+            orientation="h",
+            marker={"color": PALETTE["total"]},
+            text=[f"{as_float(value):,.0f}" for value in ordered["Mentions"].tolist()],
+            textposition="outside",
+            hovertemplate="%{y}<br>%{x:,.0f} mentions<extra></extra>",
+        )
+    )
+    figure.update_xaxes(title_text="Mentions in the filing")
+    height = max(CHART_HEIGHT, 90 + 34 * len(ordered))
+    return _apply_theme(figure, "Risk Mentions by Category", height=height)
+
+
+def ppa_bridge_chart(steps: Sequence[tuple[str, float]], currency: str) -> go.Figure | None:
+    """Waterfall from consideration transferred to goodwill."""
+    if not steps:
+        return None
+
+    labels: list[str] = []
+    measures: list[str] = []
+    values: list[float] = []
+    for index, (label, amount) in enumerate(steps):
+        labels.append(_wrap(label))
+        values.append(as_float(amount))
+        if index == 0:
+            measures.append("absolute")
+        elif index == len(steps) - 1:
+            measures.append("total")
+        else:
+            measures.append("relative")
+
+    figure = go.Figure(
+        go.Waterfall(
+            orientation="v",
+            measure=measures,
+            x=labels,
+            y=values,
+            text=[f"{value:,.0f}" for value in values],
+            textposition="outside",
+            hovertemplate="%{x}<br>%{y:,.2f}<extra></extra>",
+            connector={"line": {"color": PALETTE["neutral"], "width": 1, "dash": "dot"}},
+            increasing={"marker": {"color": PALETTE["positive"]}},
+            decreasing={"marker": {"color": PALETTE["negative"]}},
+            totals={"marker": {"color": PALETTE["total"]}},
+        )
+    )
+    figure.update_yaxes(title_text=currency)
+    return _apply_theme(
+        figure,
+        "ASC 805 Purchase Price Allocation — Consideration to Goodwill",
+        height=CHART_HEIGHT + 60,
+    )
+
+
+def render_export_buttons(payload, filename_stem: str, key_prefix: str = "") -> None:
+    """PDF, Markdown and CSV download buttons for a report payload."""
+    from export import (
+        FPDF_AVAILABLE,
+        FPDF_IMPORT_ERROR,
+        build_csv_bundle,
+        build_markdown,
+        build_pdf,
+    )
+
+    st.divider()
+    st.markdown("**Export**")
+    pdf_column, markdown_column, csv_column = st.columns(3)
+
+    with pdf_column:
+        if FPDF_AVAILABLE:
+            try:
+                pdf_bytes = build_pdf(payload)
+                st.download_button(
+                    "Download PDF",
+                    data=pdf_bytes,
+                    file_name=f"{filename_stem}.pdf",
+                    mime="application/pdf",
+                    key=f"{key_prefix}::pdf",
+                    **sizing(element="download_button"),
+                )
+            except Exception as exc:  # noqa: BLE001 - never let export break the page
+                st.caption(f"PDF generation failed ({type(exc).__name__}). Use Markdown below.")
+        else:
+            st.caption(f"PDF export unavailable: {FPDF_IMPORT_ERROR}")
+
+    with markdown_column:
+        st.download_button(
+            "Download Markdown",
+            data=build_markdown(payload),
+            file_name=f"{filename_stem}.md",
+            mime="text/markdown",
+            key=f"{key_prefix}::md",
+            **sizing(element="download_button"),
+        )
+
+    with csv_column:
+        csv_payload = build_csv_bundle(payload)
+        st.download_button(
+            "Download tables (CSV)",
+            data=csv_payload or "no tabular data",
+            file_name=f"{filename_stem}_tables.csv",
+            mime="text/csv",
+            key=f"{key_prefix}::csv",
+            **sizing(element="download_button"),
+        )

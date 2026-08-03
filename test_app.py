@@ -14,7 +14,7 @@ import sys
 from streamlit.testing.v1 import AppTest
 
 from case_studies import CASE_LIBRARY, case_options
-from config import MODE_LIVE, MODE_SANDBOX
+from config import MODE_LIVE, MODE_SANDBOX, MODULE_PPA, MODULE_QOE, MODULE_SEC
 
 FAILURES: list[str] = []
 TIMEOUT = 120
@@ -70,9 +70,25 @@ def assert_no_exception(app: AppTest, context: str) -> bool:
     return True
 
 
+# The sidebar now leads with the module selector, so the workspace-mode radio
+# sits at index 1. Named helpers keep the tests readable if that order changes.
+MODULE_RADIO = 0
+MODE_RADIO = 1
+
+
 def start() -> AppTest:
     app = AppTest.from_file("app.py", default_timeout=TIMEOUT)
     app.run()
+    return app
+
+
+def set_mode(app: AppTest, mode: str) -> AppTest:
+    app.sidebar.radio[MODE_RADIO].set_value(mode).run()
+    return app
+
+
+def set_module(app: AppTest, module: str) -> AppTest:
+    app.sidebar.radio[MODULE_RADIO].set_value(module).run()
     return app
 
 
@@ -84,7 +100,11 @@ def main() -> int:
         any("FDD / QoE Diligence Workspace" in title.value for title in app.title),
         "page title renders",
     )
-    check(len(app.sidebar.radio) >= 1, "workspace mode selector renders in the sidebar")
+    check(len(app.sidebar.radio) >= 2, "module and workspace-mode selectors both render")
+    check(
+        app.sidebar.radio[MODULE_RADIO].value == MODULE_QOE,
+        "Module 1 is the default module",
+    )
     check(
         any("Available case studies" in heading.value for heading in app.subheader),
         "landing page lists the case library",
@@ -93,7 +113,7 @@ def main() -> int:
     section("2. Sandbox mode — every case")
     for case_key, case in CASE_LIBRARY.items():
         app = start()
-        app.sidebar.radio[0].set_value(MODE_SANDBOX).run()
+        set_mode(app, MODE_SANDBOX)
         if not assert_no_exception(app, f"{case['name']} mode switch"):
             continue
 
@@ -106,7 +126,7 @@ def main() -> int:
 
         print(f"  · {case['name']}")
         counts = element_counts(app)
-        check(len(app.tabs) >= 7, f"{case['name']}: seven top-level tabs render")
+        check(len(app.tabs) >= 8, f"{case['name']}: all Module 1 tabs render (incl. Reports & Export)")
         check(
             counts.get("Dataframe", 0) >= 15,
             f"{case['name']}: statements, schedules and editors render "
@@ -136,7 +156,7 @@ def main() -> int:
 
     section("3. Sandbox workflow — comparison and review")
     app = start()
-    app.sidebar.radio[0].set_value(MODE_SANDBOX).run()
+    set_mode(app, MODE_SANDBOX)
     app.sidebar.selectbox[0].set_value(case_option("anvil")).run()
     assert_no_exception(app, "anvil load")
 
@@ -167,7 +187,7 @@ def main() -> int:
 
     section("4. Presentation controls")
     app = start()
-    app.sidebar.radio[0].set_value(MODE_SANDBOX).run()
+    set_mode(app, MODE_SANDBOX)
     app.sidebar.toggle[0].set_value(True).run()
     check(assert_no_exception(app, "full precision"), "full raw precision toggle renders")
 
@@ -182,7 +202,7 @@ def main() -> int:
 
     section("5. Clear working papers")
     app = start()
-    app.sidebar.radio[0].set_value(MODE_SANDBOX).run()
+    set_mode(app, MODE_SANDBOX)
     clear = [button for button in app.button if "Clear working papers" in button.label]
     check(len(clear) == 1, "the Clear working papers button renders")
     clear[0].click().run()
@@ -190,7 +210,7 @@ def main() -> int:
 
     section("6. Live mode guard rails")
     app = start()
-    app.sidebar.radio[0].set_value(MODE_LIVE).run()
+    set_mode(app, MODE_LIVE)
     load = [button for button in app.button if "Load target" in button.label]
     check(len(load) == 1, "the Load target button renders in live mode")
     load[0].click().run()
@@ -201,6 +221,60 @@ def main() -> int:
     check(
         any("Enter a ticker in the sidebar" in info.value for info in app.info),
         "an empty ticker leaves the landing guidance in place",
+    )
+
+    section("7. Module navigation and cross-module isolation")
+    app = start()
+    set_mode(app, MODE_SANDBOX)
+    check(assert_no_exception(app, "module 1"), "Module 1 renders in sandbox mode")
+    module_one_tabs = len(app.tabs)
+
+    set_module(app, MODULE_PPA)
+    check(assert_no_exception(app, "module 3"), "Module 3 (ASC 805 PPA) renders")
+    subheaders = " ".join(heading.value for heading in app.subheader)
+    check(
+        "ASC 805 Purchase Price Allocation" in subheaders,
+        "Module 3 shows the allocation header",
+    )
+    check(
+        any("Day 1 Opening Balance Sheet" in heading.value for heading in app.subheader),
+        "Module 3 renders the Day 1 opening balance sheet",
+    )
+    check(
+        any("Marginal tax rate (%)" in slider.label for slider in app.slider),
+        "Module 3 exposes the marginal tax rate control",
+    )
+    check(
+        any("Goodwill" in metric.label or "Bargain" in metric.label for metric in app.metric),
+        "Module 3 surfaces goodwill or a bargain purchase gain",
+    )
+
+    set_module(app, MODULE_SEC)
+    check(assert_no_exception(app, "module 2"), "Module 2 (SEC scanner) renders")
+    info_text = " ".join(item.value for item in app.info)
+    check(
+        "EDGAR" in info_text or "EDGAR" in " ".join(h.value for h in app.subheader),
+        "Module 2 explains its EDGAR dependency in sandbox mode",
+    )
+
+    set_module(app, MODULE_QOE)
+    check(assert_no_exception(app, "back to module 1"), "returning to Module 1 renders")
+    check(
+        len(app.tabs) == module_one_tabs,
+        "Module 1 tab structure is unchanged after visiting other modules",
+    )
+    check(
+        any("Quality of Earnings Working Papers" in heading.value for heading in app.subheader),
+        "Module 1 working papers survive the round trip",
+    )
+
+    section("8. Live-mode module availability")
+    app = start()
+    set_mode(app, MODE_LIVE)
+    set_module(app, MODULE_SEC)
+    check(
+        assert_no_exception(app, "module 2 live, no ticker"),
+        "Module 2 handles live mode with no ticker loaded",
     )
 
     print()

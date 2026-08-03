@@ -28,6 +28,9 @@ import streamlit as st
 
 import ai_reviewer
 import components as ui
+import ui_ppa
+import ui_sec
+import workspace as ws
 from api_client import DataIngestionError, build_live_engagement, cache_ttl_seconds
 from case_studies import (
     CASE_LIBRARY,
@@ -53,6 +56,10 @@ from config import (
     MODE_LIVE,
     MODE_SANDBOX,
     MODES,
+    MODULE_PPA,
+    MODULE_QOE,
+    MODULE_SEC,
+    MODULES,
     NON_OPERATING_ASSET,
     PRECISION_POLICY,
     RISK_SEVERITIES,
@@ -61,6 +68,7 @@ from config import (
     TERMINAL_METHODS,
     number_format,
 )
+from export import ReportPayload, ReportSection, safe_filename
 from finance_logic import (
     NAN,
     DCFAssumptions,
@@ -239,9 +247,32 @@ def initial_case_index(options: list[tuple[str, str]]) -> int:
     return 0
 
 
+def initial_module_index() -> int:
+    """Default module, honouring ``?module=sec|ppa|qoe`` on first load."""
+    requested = query_param("module").lower()
+    if requested.startswith("sec"):
+        return MODULES.index(MODULE_SEC)
+    if requested.startswith("ppa") or requested.startswith("805"):
+        return MODULES.index(MODULE_PPA)
+    return MODULES.index(MODULE_QOE)
+
+
 def render_sidebar() -> dict:
     st.sidebar.title("Engagement Setup")
     st.sidebar.caption(f"{APP_TITLE} · v{APP_VERSION}")
+
+    module = st.sidebar.radio(
+        "Workspace module",
+        MODULES,
+        index=initial_module_index(),
+        key="active_module",
+        help=(
+            "All three modules share the target selection and the Manager Review Panel "
+            "configured below. Module 2 requires a live ticker; Module 3 imports its "
+            "consideration from the Module 1 valuation."
+        ),
+    )
+    st.sidebar.divider()
 
     mode = st.sidebar.radio(
         "Workspace mode",
@@ -253,7 +284,7 @@ def render_sidebar() -> dict:
             "guided case with a hidden answer key you can grade your work against."
         ),
     )
-    settings: dict = {"mode": mode}
+    settings: dict = {"mode": mode, "module": module}
 
     if mode == MODE_LIVE:
         st.sidebar.subheader("Target")
@@ -1124,72 +1155,15 @@ def render_landing() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def main() -> None:
-    settings = render_sidebar()
-    mode = settings["mode"]
+def render_module_qoe(
+    engagement, engagement_id: str, settings: dict, mode: str, case, case_key, raw
+) -> None:
+    """Module 1 — the original FDD / QoE workspace, unchanged in behaviour.
 
-    st.title(APP_TITLE)
-    st.caption(APP_TAGLINE)
-
-    raw = None
-    case = None
-    case_key = None
-
-    if mode == MODE_LIVE:
-        ticker = settings.get("ticker", "")
-        if settings.get("load") and ticker:
-            st.session_state["active_ticker"] = ticker
-        active = st.session_state.get("active_ticker")
-        if not active:
-            st.info(
-                "Enter a ticker in the sidebar and select **Load target** to begin an open-ended "
-                "practice engagement, or switch to **TAS Analyst Sandbox Mode** for a guided case "
-                "with a hidden answer key.",
-                icon="👋",
-            )
-            render_landing()
-            return
-        try:
-            with st.spinner(f"Fetching annual statements for {active}…"):
-                engagement, raw = load_live(active)
-        except DataIngestionError as exc:
-            st.error(str(exc), icon="🚫")
-            st.session_state.pop("active_ticker", None)
-            return
-        except Exception as exc:  # noqa: BLE001 - the vendor can fail in many ways
-            st.error(
-                f"The data provider request failed ({type(exc).__name__}: {exc}). Check network "
-                "connectivity, or switch to Sandbox Mode, which needs no external data.",
-                icon="🚫",
-            )
-            st.session_state.pop("active_ticker", None)
-            return
-        engagement_id = f"live:{active}"
-    else:
-        case_key = settings["case_key"]
-        case = CASE_LIBRARY[case_key]
-        engagement = load_case(case_key)
-        engagement_id = f"case:{case_key}"
-
-    initialise_seeds(engagement, engagement_id)
-
-    header_left, header_right = st.columns([4, 1])
-    with header_left:
-        subtitle = engagement.entity_name
-        if engagement.ticker:
-            subtitle += f" ({engagement.ticker})"
-        if case is not None:
-            subtitle = f"{case['name']} — {subtitle}"
-        st.markdown(f"### {subtitle}")
-        st.caption(
-            f"{len(engagement.periods)} diligence periods · {engagement.periods[0]}–"
-            f"{engagement.periods[-1]} · {engagement.currency}"
-        )
-    with header_right:
-        if st.button("Clear working papers", use_container_width=True):
-            clear_working_papers(engagement_id)
-            st.rerun()
-
+    Publishes its materialised outputs to the shared bus on every run so that
+    Modules 2 and 3 can read the current adjustment ledger, valuation and
+    working capital without re-deriving them.
+    """
     tab_labels = [
         "Deal Overview",
         "Financial Statements",
@@ -1200,6 +1174,7 @@ def main() -> None:
     if mode == MODE_SANDBOX:
         tab_labels.append("Compare to Actual Deal")
     tab_labels.append("Manager Review")
+    tab_labels.append("Reports & Export")
     tabs = st.tabs(tab_labels)
 
     # Reserve slots so the editors can execute early while still rendering in
@@ -1250,6 +1225,9 @@ def main() -> None:
             key=widget_key(engagement_id, "risks"),
         )
     risks = ui.frame_to_risks(edited_risks)
+
+    # Publish the materialised ledger so Module 2 can append to it safely.
+    ws.publish(engagement_id, "adjustments_frame", edited_adjustments)
 
     # --- Everything else ----------------------------------------------------
     with qoe_header_slot:
@@ -1307,6 +1285,226 @@ def main() -> None:
             case_key,
             comparison,
         )
+
+    with tabs[review_tab_index + 1]:
+        render_reports(
+            engagement,
+            engagement_id,
+            adjustments,
+            classifications,
+            risks,
+            valuation,
+            peg,
+            latest_nwc,
+            full_precision,
+        )
+
+    # Share the outputs Modules 2 and 3 depend on.
+    ws.publish(engagement_id, "valuation", valuation)
+    ws.publish(engagement_id, "peg", peg)
+    ws.publish(engagement_id, "latest_nwc", latest_nwc)
+    ws.publish(
+        engagement_id,
+        "adjusted_ebitda",
+        adjusted_ebitda(engagement, adjustments, engagement.latest_period),
+    )
+
+
+def render_reports(
+    engagement,
+    engagement_id: str,
+    adjustments,
+    classifications,
+    risks,
+    valuation,
+    peg: float,
+    latest_nwc: float,
+    full_precision: bool,
+) -> None:
+    """Assemble and export the formal Quality of Earnings report."""
+    st.subheader("Quality of Earnings Report")
+    st.markdown(
+        "Exports the working papers as a paginated PDF, as Markdown, or as CSV schedules. The "
+        "report is assembled from the live state of your ledger — change an adjustment and "
+        "regenerate."
+    )
+
+    latest = engagement.latest_period
+    reported = reported_ebitda(engagement, latest)
+    adjusted = adjusted_ebitda(engagement, adjustments, latest)
+
+    summary_lines = [
+        f"Diligence period: {engagement.periods[0]} to {engagement.periods[-1]} "
+        f"({engagement.currency}).",
+        "",
+        f"Reported EBITDA for {latest} is {ui.format_value(reported, full_precision)}. "
+        f"Adjusted EBITDA on the working papers is {ui.format_value(adjusted, full_precision)}, "
+        f"a net quality-of-earnings impact of "
+        f"{ui.format_value((adjusted - reported) if not (is_missing(adjusted) or is_missing(reported)) else NAN, full_precision)}.",
+        "",
+        f"Net working capital at {latest} is {ui.format_value(latest_nwc, full_precision)} "
+        f"against a proposed peg of {ui.format_value(peg, full_precision)}.",
+    ]
+    if valuation:
+        summary_lines += [
+            "",
+            f"The discounted cash flow indicates an enterprise value of "
+            f"{ui.format_value(valuation.get('enterprise_value'), full_precision)} and an implied "
+            f"equity value of {ui.format_value(valuation.get('equity_value'), full_precision)} "
+            f"after applying {ui.format_value(valuation.get('debt_like_total'), full_precision)} "
+            "of debt-like items and "
+            f"{ui.format_value(valuation.get('non_operating_total'), full_precision)} of "
+            "non-operating assets.",
+        ]
+
+    risk_frame = ui.risks_to_frame(risks)
+    classification_frame = ui.classifications_to_frame(classifications)
+    adjustment_frame = ui.adjustments_to_frame(adjustments, engagement.periods)
+
+    sections = [
+        ReportSection("Executive Summary", "\n".join(summary_lines)),
+        ReportSection("Earnings Quality Summary", "", margin_summary(engagement, adjustments)),
+        ReportSection(
+            "Quality of Earnings Bridge", "", build_qoe_bridge(engagement, adjustments)
+        ),
+        ReportSection("Adjustment Schedule", "", adjustment_frame, include_index=False),
+        ReportSection("Net Working Capital", "", build_nwc_schedule(engagement)),
+        ReportSection("Trailing Efficiency Metrics", "", build_efficiency_metrics(engagement)),
+        ReportSection(
+            "Debt-Like Items and Non-Operating Assets", "", classification_frame, include_index=False
+        ),
+        ReportSection("Risk Register", "", risk_frame, include_index=False),
+    ]
+
+    sec_summary = ws.consume(engagement_id, "sec_matrix_summary")
+    if sec_summary:
+        sections.append(
+            ReportSection(
+                "SEC Narrative Risk Scan",
+                f"The Module 2 scanner raised {sec_summary.get('flags_raised', 0)} flags, of "
+                f"which {sec_summary.get('accepted_flags', 0)} were accepted and pushed into this "
+                f"ledger, carrying a combined EBITDA haircut of "
+                f"{ui.format_value(sec_summary.get('total_haircut'), full_precision)}.",
+            )
+        )
+    ppa_summary = ws.consume(engagement_id, "ppa_summary")
+    if ppa_summary:
+        sections.append(
+            ReportSection(
+                "ASC 805 Purchase Price Allocation",
+                f"On consideration of "
+                f"{ui.format_value(ppa_summary.get('consideration'), full_precision)}, the "
+                f"Module 3 allocation recognises "
+                f"{ui.format_value(ppa_summary.get('intangibles'), full_precision)} of "
+                f"identifiable intangibles, a deferred tax liability of "
+                f"{ui.format_value(ppa_summary.get('deferred_tax_liability'), full_precision)}, "
+                f"and residual goodwill of "
+                f"{ui.format_value(ppa_summary.get('goodwill'), full_precision)}. Annual "
+                "intangible amortization post-close is "
+                f"{ui.format_value(ppa_summary.get('annual_amortization'), full_precision)}.",
+            )
+        )
+
+    review = st.session_state.get(f"review::{engagement_id}")
+    if review is not None:
+        sections.append(ReportSection("Manager Review", review.body))
+
+    payload = ReportPayload(
+        title="Quality of Earnings Report",
+        entity=engagement.entity_name
+        + (f" ({engagement.ticker})" if engagement.ticker else ""),
+        subtitle=f"Financial due diligence working papers · {engagement.periods[-1]}",
+        sections=sections,
+    )
+
+    with st.expander("Report contents", expanded=False):
+        for section in payload.blocks():
+            rows = 0 if section.table is None else len(section.table)
+            st.markdown(f"- **{section.title}** — {rows} row(s)")
+
+    ui.render_export_buttons(
+        payload,
+        safe_filename(engagement.ticker or engagement.entity_name, "qoe_report"),
+        key_prefix=f"qoe::{engagement_id}",
+    )
+
+
+def main() -> None:
+    settings = render_sidebar()
+    mode = settings["mode"]
+    module = settings["module"]
+
+    st.title(APP_TITLE)
+    st.caption(APP_TAGLINE)
+
+    raw = None
+    case = None
+    case_key = None
+
+    if mode == MODE_LIVE:
+        ticker = settings.get("ticker", "")
+        if settings.get("load") and ticker:
+            st.session_state["active_ticker"] = ticker
+        active = st.session_state.get("active_ticker")
+        if not active:
+            st.info(
+                "Enter a ticker in the sidebar and select **Load target** to begin an open-ended "
+                "practice engagement, or switch to **TAS Analyst Sandbox Mode** for a guided case "
+                "with a hidden answer key.",
+                icon="👋",
+            )
+            render_landing()
+            return
+        try:
+            with st.spinner(f"Fetching annual statements for {active}…"):
+                engagement, raw = load_live(active)
+        except DataIngestionError as exc:
+            st.error(str(exc), icon="🚫")
+            st.session_state.pop("active_ticker", None)
+            return
+        except Exception as exc:  # noqa: BLE001 - the vendor can fail in many ways
+            st.error(
+                f"The data provider request failed ({type(exc).__name__}: {exc}). Check network "
+                "connectivity, or switch to Sandbox Mode, which needs no external data.",
+                icon="🚫",
+            )
+            st.session_state.pop("active_ticker", None)
+            return
+        engagement_id = f"live:{active}"
+    else:
+        case_key = settings["case_key"]
+        case = CASE_LIBRARY[case_key]
+        engagement = load_case(case_key)
+        engagement_id = f"case:{case_key}"
+
+    initialise_seeds(engagement, engagement_id)
+
+    header_left, header_right = st.columns([4, 1])
+    with header_left:
+        subtitle = engagement.entity_name
+        if engagement.ticker:
+            subtitle += f" ({engagement.ticker})"
+        if case is not None:
+            subtitle = f"{case['name']} — {subtitle}"
+        st.markdown(f"### {subtitle}")
+        st.caption(
+            f"{module} · {len(engagement.periods)} diligence periods · "
+            f"{engagement.periods[0]}–{engagement.periods[-1]} · {engagement.currency}"
+        )
+    with header_right:
+        if st.button("Clear working papers", **ui.sizing(element="button")):
+            clear_working_papers(engagement_id)
+            ws.clear_namespace(ws.SHARED, engagement_id)
+            ws.clear_namespace(ws.SEC, engagement_id)
+            ws.clear_namespace(ws.PPA, engagement_id)
+            st.rerun()
+
+    if module == MODULE_SEC:
+        ui_sec.render(engagement, engagement_id, settings, seed_key, widget_key)
+    elif module == MODULE_PPA:
+        ui_ppa.render(engagement, engagement_id, settings)
+    else:
+        render_module_qoe(engagement, engagement_id, settings, mode, case, case_key, raw)
 
 
 if __name__ == "__main__":

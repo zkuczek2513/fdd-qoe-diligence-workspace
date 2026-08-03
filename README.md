@@ -14,9 +14,12 @@ Built with Python, Streamlit and Plotly, with an optional Claude-powered review 
 ## Contents
 
 - [What it does](#what-it-does)
+- [The three modules](#the-three-modules)
 - [Quick start](#quick-start)
 - [The simulation loop](#the-simulation-loop)
 - [Architecture](#architecture)
+- [SEC EDGAR methodology](#sec-edgar-methodology)
+- [ASC 805 purchase price allocation](#asc-805-purchase-price-allocation)
 - [Financial methodology](#financial-methodology)
 - [Case study library](#case-study-library)
 - [Numerical integrity policy](#numerical-integrity-policy)
@@ -48,6 +51,27 @@ EBITDA and theirs, and explains every adjustment you missed.
 Both modes feed the same downstream analytics: the QoE bridge and waterfall, the net working capital
 schedule with DSO/DIO/DPO trending and a proposed peg, an integrated DCF anchored on *your* Adjusted
 EBITDA, and a transaction value bridge that walks enterprise value to implied equity value.
+
+---
+
+## The three modules
+
+The workspace is one application with three modules, selected from the sidebar. All three share the
+same target selection and the same Manager Review Panel credentials, and they pass work between each
+other rather than sitting side by side.
+
+| Module | What it does | Depends on |
+|---|---|---|
+| **1 — FDD / QoE Workspace** | The diligence engagement: three-statement model, QoE bridge and waterfall, net working capital and the peg, DCF and the transaction value bridge, sandbox case comparison, manager review | — |
+| **2 — SEC Narrative Risk Scanner** | Pulls 10-K/10-Q filings from EDGAR, extracts Item 1A, Item 7 and the contingencies footnote, scans for M&A red flags, diffs the narrative year over year, and pushes quantified haircuts into Module 1 | A live ticker |
+| **3 — ASC 805 PPA Engine** | Allocates consideration across the acquired balance sheet at fair value, computes deferred tax on the step-ups, derives goodwill or a bargain purchase gain, and builds the Day 1 opening balance sheet | Module 1's valuation |
+
+**The modules are wired, not merely adjacent.** A flag accepted in Module 2 with a dollar haircut
+becomes an adjustment row in the Module 1 ledger, which moves Adjusted EBITDA, which moves the DCF
+baseline, which moves the enterprise value that Module 3 imports as consideration transferred, which
+moves goodwill. One number changed in the scanner propagates through the entire chain.
+
+Deep links carry the module: `?module=sec&ticker=CAT`, `?module=ppa`, `?module=qoe&mode=sandbox&case=anvil`.
 
 ---
 
@@ -143,10 +167,42 @@ reviewer's assessment all move together. That is what makes it a simulation rath
 | `finance_logic.py` | The financial engine: `Engagement`, `Adjustment`, QoE bridge, NWC, efficiency metrics, DCF, value bridge, diagnostics |
 | `case_studies.py` | Case library, three-statement builder, answer keys, work comparison engine |
 | `components.py` | Streamlit components, editors and Plotly renderers — the only layer that touches precision |
-| `ai_reviewer.py` | Claude review panel, prompt assembly, and the deterministic heuristic fallback |
+| `ai_reviewer.py` | Claude review panels (QoE manager, SEC director), prompts, and the deterministic heuristic fallbacks |
+| `workspace.py` | Cross-module state bus and the QoE ledger hand-off |
+| `edgar_client.py` | SEC EDGAR ingestion: CIK resolution, async filing retrieval, item extraction |
+| `text_analysis.py` | Regex risk detectors, evidence capture, readability and disclosure metrics |
+| `risk_engine.py` | Year-over-year narrative diff, diligence impact scoring, QoE ledger translation |
+| `ppa_engine.py` | ASC 805 allocation, deferred tax, goodwill, opening balance sheet |
+| `ui_sec.py` / `ui_ppa.py` | Module 2 and Module 3 user interfaces |
+| `export.py` | PDF, Markdown and CSV report generation |
 
 Supporting: `validate_cases.py` (statement articulation harness), `test_pipeline.py` (analytical
-pipeline tests), `test_app.py` (headless UI tests via `streamlit.testing`).
+pipeline tests), `test_app.py` (headless UI tests via `streamlit.testing`), `test_modules.py`
+(Module 2 and 3 engines and their integration with Module 1).
+
+### Cross-module state
+
+Three session-state namespaces are kept rigorously separate so no module can corrupt another:
+
+```
+seed::<engagement>::<name>      immutable editor seeds (Module 1)
+editor::<engagement>::<name>    Streamlit-owned widget state
+shared::<engagement>::<name>    published cross-module outputs
+sec::<engagement>::<name>       Module 2 private state
+ppa::<engagement>::<name>       Module 3 private state
+```
+
+Only the active module executes on a given run, and Streamlit garbage-collects widget state for
+widgets it did not render — so `editor::` keys cannot be read across modules. Each module therefore
+*publishes* its materialised outputs to `shared::` on every render, and other modules consume from
+there.
+
+The **Push to QoE Adjustments** hand-off deserves a note. `st.data_editor` stores *deltas* against
+the frame it was given: added rows, edited cells, deleted rows. Appending to the seed underneath a
+live widget would re-apply those deltas against shifted row positions and corrupt the ledger. The
+push therefore rebuilds the combined frame, writes it to the seed, and **drops the widget key** so
+the editor re-seeds cleanly on the next run. Existing analyst work is preserved because Module 1
+publishes its materialised ledger on every render.
 
 ### The canonical taxonomy
 
@@ -327,6 +383,125 @@ currency and percentage terms, and your coverage of the accepted adjustments.
 
 ---
 
+## SEC EDGAR methodology
+
+### Access and compliance
+
+Every request declares a User-Agent carrying a contact address, as the SEC requires — the agency's
+WAF returns **403 Forbidden** without one. Override the default with the `SEC_USER_AGENT`
+environment variable so a deployment declares its own operator:
+
+```bash
+export SEC_USER_AGENT="Your Name your.email@example.com"
+```
+
+Requests run at most five concurrently with a 120ms stagger, comfortably inside the SEC's published
+10 requests/second ceiling. Filing bundles are cached for six hours via `@st.cache_data`, and the NLP
+pass is cached separately, so a rerun never re-pings EDGAR for a document it already holds.
+
+### Retrieval
+
+`resolve_cik` maps the ticker through the SEC's `company_tickers.json` index; `list_filings` reads
+the issuer's submissions feed. Documents are then fetched **concurrently** with `asyncio` and
+`aiohttp` — a fresh event loop per call, because Streamlit executes scripts on a worker thread with
+no ambient loop. Three filings retrieve in roughly 1.5 seconds.
+
+### Item extraction
+
+Filing HTML is flattened with `lxml` (falling back to a regex stripper), then items are located by
+**scoring candidate boundary pairs** rather than taking the first or last heading match. This matters
+more than it sounds. An item heading appears several times in a filing:
+
+1. in the table of contents (yields a few characters),
+2. as the real section heading,
+3. as a cross-reference in later prose — *"as described in Part I, Item 1A"*.
+
+Taking the last match returns everything from a mid-document cross-reference to the end of the
+filing. On Caterpillar's FY2025 10-K that produced a 304,000-character "Item 1A" — 55% of the entire
+document. Pairing every start offset with the first closing marker after it and selecting the
+longest properly-bounded candidate returns the correct 74,000 characters, without hard-coding
+anything about a specific filer.
+
+A missing item is **reported, never raised**. Smaller reporting companies may omit Item 1A entirely,
+and 10-Qs typically cross-reference the 10-K rather than restating it. Those cases surface as UI
+warnings naming the section that could not be located.
+
+### Scanning
+
+Detectors are explicit named regular expressions across nine TAS risk categories — revenue
+recognition, legal and regulatory contingencies, working capital, going concern, internal control,
+concentration, impairment, debt and covenants, and tax. Every hit captures **the sentence that
+triggered it**, so a finding can be judged rather than trusted. Whitespace is normalised before
+scanning so a phrase broken across a line still matches.
+
+Disclosure metrics — word count, sentence length, complex-word ratio, hedging density, Flesch-Kincaid
+grade — are trended year over year. Risk sections that lengthen materially, or become harder to read
+without a change in business complexity, are a documented signal of deteriorating disclosure quality.
+
+### Scoring
+
+```
+impact score = severity weight x (1 + ln(1 + mentions)) x year-over-year emphasis
+```
+
+Severity weights run Low 1.0 to Critical 4.0. The emphasis multiplier is **2.0 for language that is
+new this year** and 1.5 for materially expanded language. That weighting is the point of the module:
+boilerplate a filer has repeated for a decade carries no diligence signal, while a risk factor that
+did not exist last year usually means something happened.
+
+Nothing reaches the QoE ledger automatically. Every flag starts unaccepted with a zero haircut; the
+analyst must both accept it and type a dollar figure.
+
+---
+
+## ASC 805 purchase price allocation
+
+The engine walks consideration transferred down to the residual:
+
+```
+Consideration transferred
+  Less: book value of net assets acquired      (cash-free, debt-free)
+  Less: fair value step-up on tangible assets
+  Less: identifiable intangible assets recognised
+  Plus: deferred tax liability on the step-ups
+  ----------------------------------------------
+  = Goodwill  (or a bargain purchase gain if negative)
+```
+
+Two technical points the engine handles explicitly, because they are where allocations most often go
+wrong:
+
+**Deferred tax arises only where book and tax basis diverge.** In a **stock acquisition** the
+target's tax basis carries over, so every step-up creates a deferred tax liability at the marginal
+rate under ASC 740-10 — and because the DTL reduces identifiable net assets, it increases goodwill
+dollar for dollar. In a **taxable asset acquisition**, or a stock purchase with a section 338(h)(10)
+or 336(e) election, tax basis steps up alongside book basis and **no DTL arises**. The structure is a
+user input, not a buried assumption; toggling it on an otherwise identical allocation moves goodwill
+by exactly the DTL.
+
+**No deferred tax is recorded on goodwill.** ASC 805-740-25-3 exempts the initial recognition of
+non-deductible goodwill, which is why goodwill is the residual rather than an input to the deferred
+tax calculation.
+
+A **bargain purchase gain** — consideration below the fair value of identifiable net assets — is
+flagged with the ASC 805-30-25-4 reassessment requirement. A bargain purchase is rare and is far more
+often an allocation error than a windfall.
+
+Identifiable intangibles are recognised apart from goodwill where they meet the separability or
+contractual-legal criterion in ASC 805-20-25-10. The matrix ships with the classes a PPA normally
+identifies — customer relationships, developed technology, trade names, non-competes, backlog,
+in-process R&D — with indicative lives and valuation methods, but **fair values start at zero**. They
+come from the valuation specialist's work; the engine does not invent them. A life of zero denotes an
+indefinite-lived asset, which is not amortized under ASC 350-30-35.
+
+The **Day 1 opening balance sheet** presents historical book value against fair value line by line,
+with the basis of measurement for each. Cash and funded debt are excluded under the cash-free
+debt-free convention, and the seller's goodwill is eliminated and replaced by the computed residual.
+A forward amortization schedule quantifies the post-close earnings drag — routinely omitted from a
+buyer's model, and routinely a year-one surprise.
+
+---
+
 ## Numerical integrity policy
 
 **No value is rounded anywhere in this codebase.** `round()`, `numpy.round`, `DataFrame.round` and
@@ -406,6 +581,7 @@ offline.
 python validate_cases.py   # statement articulation + derived ratio diagnostics
 python test_pipeline.py    # analytical pipeline, comparison engine, precision audit
 python test_app.py         # headless UI via streamlit.testing.v1.AppTest
+python test_modules.py     # Module 2 and 3 engines and their Module 1 integration
 ```
 
 `validate_cases.py` asserts that every case balances and foots, and prints revenue, EBITDA, Adjusted
@@ -422,6 +598,17 @@ reviewer's findings, prompt assembly, and the no-rounding audit.
 in Sandbox Mode (asserting seven tabs, all six Plotly figures and the full table set render), the
 compare-to-actual-deal workflow, the review panel, the precision toggle, the DCF controls, clearing
 the workspace, and the empty-ticker guard rail.
+
+`test_modules.py` covers the scanner (detector coverage, evidence capture, empty-input handling),
+the year-over-year diff (similarity, HTML escaping against injection from filing text, identical-input
+behaviour), the scoring and hand-off (default-unaccepted matrix, zero-haircut exclusion, schema match
+against the Module 1 editor, sign convention, round-trip into `Adjustment` objects), the ASC 805
+engine (component identities, DTL equals basis difference times rate, asset-vs-stock structure,
+DTL-to-goodwill equivalence, bargain purchase, indefinite-lived intangibles, opening balance sheet
+reconciliation) and the export layer including Unicode transliteration into the PDF core fonts.
+
+`test_app.py` additionally proves **cross-module isolation**: navigating Module 1 → 3 → 2 → 1 leaves
+the Module 1 tab structure and working papers intact.
 
 ### Dependency compatibility
 
@@ -447,11 +634,13 @@ All three suites pass on both, with zero deprecation warnings.
 
 1. Push the repository to GitHub.
 2. At [share.streamlit.io](https://share.streamlit.io), create an app pointing at `app.py`.
-3. Optionally add `ANTHROPIC_API_KEY` under **Advanced settings → Secrets** to enable the Claude
-   review panel:
+3. Optionally add secrets under **Advanced settings → Secrets**:
    ```toml
    ANTHROPIC_API_KEY = "sk-ant-..."
+   SEC_USER_AGENT = "Your Name your.email@example.com"
    ```
+   `SEC_USER_AGENT` is strongly recommended for Module 2 — the SEC requires a declaring User-Agent
+   with contact details and returns 403 without one.
 
 The app runs without secrets — Sandbox Mode and the heuristic review engine need neither network
 access nor credentials.
@@ -496,6 +685,23 @@ professional due diligence engagement.**
   schedules or circular interest, or compute WACC from a capital structure build-up.
 - Switching target resets the workspace. Working papers are held per engagement in session state and
   are not persisted across sessions.
+- **Module 2 requires a live US registrant.** EDGAR indexes domestic filers by ticker; foreign
+  private issuers, private companies and most ADRs will not resolve, and the sandbox cases are
+  fictional targets with no EDGAR presence.
+- **The scanner counts regular expression matches.** It cannot read context, cannot distinguish a
+  hypothetical risk from a realised one, and will fire on any filer using standard litigation or
+  critical-accounting-estimate language. Treat a high mention count as an instruction to go and read
+  the section, not as a finding. Every flag carries its triggering sentence precisely so it can be
+  dismissed quickly when the context does not support it.
+- **Item extraction is heuristic.** Filers are not required to use standard headings. The boundary
+  scoring described above is robust across the issuers tested, but a filing with unusual structure
+  may yield a truncated or over-long extract; the UI warns when a closing heading could not be
+  resolved.
+- **EDGAR throttles datacenter IP ranges.** Module 2 is more reliable running locally than on a
+  cloud host, which affects Streamlit Community Cloud deployments.
+- **The PPA engine allocates; it does not value.** Intangible fair values are analyst inputs from a
+  valuation specialist's work. The engine computes the deferred tax and the residual, and does not
+  opine on whether the inputs are supportable.
 
 ---
 

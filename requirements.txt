@@ -8,3 +8,10 @@ pandas>=2.0,<4
 plotly>=5.20,<7
 yfinance>=0.2.40
 anthropic>=0.40
+
+# Module 2 — SEC EDGAR ingestion and narrative analysis
+aiohttp>=3.9,<4
+lxml>=5.0,<6
+
+# Module 7 — report export
+fpdf2>=2.7,<3

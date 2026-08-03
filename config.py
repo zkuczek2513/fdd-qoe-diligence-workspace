@@ -17,8 +17,11 @@ front end to a value that remains unmodified in ``st.session_state``. Toggling
 from __future__ import annotations
 
 APP_TITLE = "FDD / QoE Diligence Workspace"
-APP_TAGLINE = "Financial Due Diligence & Quality of Earnings — Learning Platform and Case Study Workspace"
-APP_VERSION = "1.0.1"
+APP_TAGLINE = (
+    "Financial Due Diligence & Quality of Earnings · SEC Narrative Risk · ASC 805 Purchase "
+    "Price Allocation"
+)
+APP_VERSION = "2.0.0"
 
 PRECISION_POLICY = (
     "All calculations are carried at full IEEE-754 double precision. No value is "
@@ -54,6 +57,40 @@ DEFAULT_TICKERS = (
     "WM",
     "ROP",
 )
+
+# --------------------------------------------------------------------------- #
+# SEC EDGAR ingestion
+# --------------------------------------------------------------------------- #
+
+EDGAR_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+EDGAR_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+EDGAR_ARCHIVES_URL = "https://www.sec.gov/Archives/edgar/data"
+
+# The SEC requires a declaring User-Agent with contact details and returns 403
+# without one. Override with the SEC_USER_AGENT environment variable so a
+# deployment declares its own operator rather than this default.
+# SEC's WAF returns 403 unless the User-Agent carries a contact email address,
+# so the declared format is "<app> <email>" as the agency documents.
+SEC_DEFAULT_USER_AGENT = "FDD-QoE-Diligence-Workspace/1.0 z.kuczek@ufl.edu"
+
+# The SEC publishes a 10 requests/second ceiling. Five concurrent requests with a
+# 120ms stagger stays well inside it.
+EDGAR_MAX_CONCURRENCY = 5
+EDGAR_THROTTLE_SECONDS = 0.12
+EDGAR_REQUEST_TIMEOUT_SECONDS = 45
+EDGAR_CACHE_TTL_SECONDS = 21600
+
+EDGAR_DEFAULT_ANNUAL_FILINGS = 3
+EDGAR_DEFAULT_QUARTERLY_FILINGS = 2
+
+# --------------------------------------------------------------------------- #
+# Workspace modules
+# --------------------------------------------------------------------------- #
+
+MODULE_QOE = "Module 1 — FDD / QoE Workspace"
+MODULE_SEC = "Module 2 — SEC Narrative Risk Scanner"
+MODULE_PPA = "Module 3 — ASC 805 PPA Engine"
+MODULES = (MODULE_QOE, MODULE_SEC, MODULE_PPA)
 
 # --------------------------------------------------------------------------- #
 # Canonical line-item taxonomy
