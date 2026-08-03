@@ -390,7 +390,7 @@ def render_overview(engagement, adjustments, full_precision: bool, case=None) ->
         [adjusted_ebitda(engagement, adjustments, period) for period in engagement.periods],
     )
     if figure is not None:
-        st.plotly_chart(figure, use_container_width=True)
+        st.plotly_chart(figure, **ui.chart_sizing())
 
 
 def render_statements(engagement, full_precision: bool, raw=None) -> None:
@@ -443,7 +443,7 @@ def render_statements(engagement, full_precision: bool, raw=None) -> None:
                 if frame is None or frame.empty:
                     st.caption("Not returned by the provider.")
                 else:
-                    st.dataframe(frame, use_container_width=True)
+                    st.dataframe(frame, **ui.sizing())
 
 
 def render_qoe_header() -> None:
@@ -486,7 +486,7 @@ def render_qoe_body(engagement, engagement_id: str, adjustments, full_precision:
 
     figure = ui.qoe_waterfall(engagement, adjustments, period, reported, adjusted)
     if figure is not None:
-        st.plotly_chart(figure, use_container_width=True)
+        st.plotly_chart(figure, **ui.chart_sizing())
     else:
         st.info("The waterfall renders once reported EBITDA can be computed for this period.")
 
@@ -560,7 +560,7 @@ def render_nwc(engagement, engagement_id: str, full_precision: bool) -> tuple[fl
         peg,
     )
     if figure is not None:
-        st.plotly_chart(figure, use_container_width=True)
+        st.plotly_chart(figure, **ui.chart_sizing())
 
     st.divider()
     st.subheader("Trailing Efficiency Metrics")
@@ -568,7 +568,7 @@ def render_nwc(engagement, engagement_id: str, full_precision: bool) -> tuple[fl
     ui.render_frame(metrics, full_precision)
     efficiency_figure = ui.efficiency_trend_chart(metrics)
     if efficiency_figure is not None:
-        st.plotly_chart(efficiency_figure, use_container_width=True)
+        st.plotly_chart(efficiency_figure, **ui.chart_sizing())
     else:
         st.info("Efficiency metrics require revenue, cost of sales and the related balances.")
 
@@ -809,7 +809,7 @@ def render_valuation(
             ui.render_frame(result.schedule, full_precision, percent_rows=("EBITDA Margin %",))
         figure = ui.dcf_chart(result.schedule, engagement.currency)
         if figure is not None:
-            st.plotly_chart(figure, use_container_width=True)
+            st.plotly_chart(figure, **ui.chart_sizing())
 
     st.divider()
     st.subheader("Transaction Value Bridge")
@@ -837,7 +837,7 @@ def render_valuation(
     with bridge_right:
         figure = ui.value_bridge_chart(bridge.steps, engagement.currency)
         if figure is not None:
-            st.plotly_chart(figure, use_container_width=True)
+            st.plotly_chart(figure, **ui.chart_sizing())
 
     ui.metric_row(
         [
@@ -930,7 +930,7 @@ def render_comparison(
         comparison.management_ebitda,
     )
     if figure is not None:
-        st.plotly_chart(figure, use_container_width=True)
+        st.plotly_chart(figure, **ui.chart_sizing())
 
     st.divider()
     st.subheader("Your Adjustments Against the Senior Associate's")
@@ -939,7 +939,7 @@ def render_comparison(
     else:
         st.dataframe(
             comparison.table,
-            use_container_width=True,
+            **ui.sizing(),
             hide_index=True,
             column_config=ui.numeric_columns(
                 ("Your Impact", "Actual Impact", "Variance", "Match Confidence %"),
@@ -1222,7 +1222,7 @@ def main() -> None:
         edited_adjustments = st.data_editor(
             st.session_state[seed_key(engagement_id, "adjustments")],
             num_rows="dynamic",
-            use_container_width=True,
+            **ui.sizing(element="data_editor"),
             hide_index=True,
             column_config=adjustment_columns(engagement.periods, full_precision),
             key=widget_key(engagement_id, "adjustments"),
@@ -1233,7 +1233,7 @@ def main() -> None:
         edited_classifications = st.data_editor(
             st.session_state[seed_key(engagement_id, "classifications")],
             num_rows="dynamic",
-            use_container_width=True,
+            **ui.sizing(element="data_editor"),
             hide_index=True,
             column_config=classification_columns(full_precision),
             key=widget_key(engagement_id, "classifications"),
@@ -1244,7 +1244,7 @@ def main() -> None:
         edited_risks = st.data_editor(
             st.session_state[seed_key(engagement_id, "risks")],
             num_rows="dynamic",
-            use_container_width=True,
+            **ui.sizing(element="data_editor"),
             hide_index=True,
             column_config=risk_columns(),
             key=widget_key(engagement_id, "risks"),

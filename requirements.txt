@@ -1,6 +1,10 @@
-streamlit>=1.37,<2
-pandas>=2.0
-numpy>=1.24
-plotly>=5.20
+# Upper bounds are pinned to the newest release verified against the full test
+# suite (see README "Testing"). The app is exercised at both ends of every
+# range — Streamlit 1.37 and 1.60, pandas 2.2 and 3.0, Plotly 5.24 and 6.9 —
+# so a deployment reproduces what was tested instead of picking up an
+# unverified release at build time.
+streamlit>=1.37,<1.61
+pandas>=2.0,<4
+plotly>=5.20,<7
 yfinance>=0.2.40
 anthropic>=0.40

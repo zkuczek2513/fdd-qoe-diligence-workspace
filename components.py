@@ -8,8 +8,10 @@ mutated. See the numerical integrity policy in :mod:`config`.
 
 from __future__ import annotations
 
+import inspect
 import re
 import textwrap
+from functools import lru_cache
 from typing import Iterable, Sequence
 
 import pandas as pd
@@ -83,6 +85,52 @@ def format_percent(value: object, full_precision: bool = False) -> str:
     return f"{numeric:,.{decimals}f}%"
 
 
+@lru_cache(maxsize=None)
+def _width_kwargs(element: str) -> tuple[tuple[str, object], ...]:
+    """Container-width keyword appropriate to the installed Streamlit.
+
+    Streamlit 1.4x replaced ``use_container_width=True`` with ``width="stretch"``
+    and emits a deprecation notice for every legacy call — around twenty per
+    rerun in this application, which floods a deployment's logs. Older releases
+    type ``width`` as pixels only and reject the token. The keyword is therefore
+    selected from the installed signature rather than assumed, so one codebase
+    runs clean on both.
+    """
+    func = getattr(st, element, None)
+    legacy: tuple[tuple[str, object], ...] = (("use_container_width", True),)
+    if func is None:
+        return legacy
+    try:
+        annotation = str(inspect.signature(func).parameters["width"].annotation)
+    except (KeyError, TypeError, ValueError):
+        return legacy
+    # Pre-1.43 signatures read ``int | None``; the token-aware releases use a
+    # ``Width`` alias covering int | "stretch" | "content".
+    if "int | None" in annotation or annotation in {"int", "<class 'int'>"}:
+        return legacy
+    return (("width", "stretch"),)
+
+
+def sizing(height: int | None = None, element: str = "dataframe") -> dict[str, object]:
+    """Sizing keyword arguments for Streamlit's data widgets.
+
+    Streamlit 1.4x also tightened height validation: ``height`` must be a
+    positive integer, ``"stretch"`` or ``"content"``, and ``None`` now raises
+    ``StreamlitInvalidHeightError``. Omitting the argument means "size to
+    content" on every release, so it is only included when a height was asked
+    for.
+    """
+    kwargs: dict[str, object] = dict(_width_kwargs(element))
+    if height is not None:
+        kwargs["height"] = height
+    return kwargs
+
+
+def chart_sizing() -> dict[str, object]:
+    """Sizing keyword arguments for ``st.plotly_chart``."""
+    return dict(_width_kwargs("plotly_chart"))
+
+
 def numeric_columns(
     columns: Iterable[str], full_precision: bool, percent_columns: Sequence[str] = ()
 ) -> dict[str, object]:
@@ -133,13 +181,12 @@ def render_frame(
                     rendered.loc[row_label, column] = f"{value:,.{decimals}f}%"
                 else:
                     rendered.loc[row_label, column] = f"{value:,.{decimals}f}"
-        st.dataframe(rendered, use_container_width=True, height=height)
+        st.dataframe(rendered, **sizing(height))
         return
 
     st.dataframe(
         display,
-        use_container_width=True,
-        height=height,
+        **sizing(height),
         column_config=numeric_columns(display.columns, full_precision),
     )
 
@@ -170,7 +217,7 @@ def render_statement(
             frame.index.name = block_title
             st.dataframe(
                 frame,
-                use_container_width=True,
+                **sizing(),
                 column_config=numeric_columns(frame.columns, full_precision),
             )
 
@@ -601,45 +648,6 @@ def frame_to_adjustments(frame: pd.DataFrame, periods: Sequence[str]) -> list[Ad
     return adjustments
 
 
-def adjustments_editor(
-    adjustments: Sequence[Adjustment], periods: Sequence[str], key: str, full_precision: bool
-) -> list[Adjustment]:
-    """Editable QoE adjustment ledger. Returns the edited adjustments."""
-    frame = adjustments_to_frame(adjustments, periods)
-    config: dict[str, object] = {
-        _ADJ_LABEL: st.column_config.TextColumn(
-            _ADJ_LABEL, width="large", help="Describe the normalization in report language."
-        ),
-        _ADJ_CATEGORY: st.column_config.SelectboxColumn(
-            _ADJ_CATEGORY, options=list(ADJUSTMENT_CATEGORIES), width="medium"
-        ),
-        _ADJ_STATUS: st.column_config.SelectboxColumn(
-            _ADJ_STATUS,
-            options=list(ADJUSTMENT_STATUSES),
-            width="medium",
-            help=(
-                "Rejected adjustments are recorded in the working papers but excluded "
-                "from Adjusted EBITDA."
-            ),
-        ),
-        _ADJ_RATIONALE: st.column_config.TextColumn(_ADJ_RATIONALE, width="large"),
-    }
-    for period in periods:
-        config[period] = st.column_config.NumberColumn(
-            period,
-            format=number_format(full_precision),
-            help=f"EBITDA impact in {period}. Positive adds back, negative deducts.",
-        )
-
-    edited = st.data_editor(
-        frame,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        column_config=config,
-        key=key,
-    )
-    return frame_to_adjustments(edited, periods)
 
 
 _CLS_LABEL = "Balance Sheet Item"
@@ -688,31 +696,6 @@ def frame_to_classifications(frame: pd.DataFrame) -> list[ClassifiedItem]:
     return items
 
 
-def classifications_editor(
-    items: Sequence[ClassifiedItem], key: str, full_precision: bool
-) -> list[ClassifiedItem]:
-    """Editable schedule of debt-like items and non-operating assets."""
-    frame = classifications_to_frame(items)
-    edited = st.data_editor(
-        frame,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            _CLS_LABEL: st.column_config.TextColumn(_CLS_LABEL, width="large"),
-            _CLS_AMOUNT: st.column_config.NumberColumn(
-                _CLS_AMOUNT,
-                format=number_format(full_precision),
-                help="Enter a positive amount; the bridge applies the sign by classification.",
-            ),
-            _CLS_CLASS: st.column_config.SelectboxColumn(
-                _CLS_CLASS, options=list(CLASSIFICATION_OPTIONS), width="medium"
-            ),
-            _CLS_RATIONALE: st.column_config.TextColumn(_CLS_RATIONALE, width="large"),
-        },
-        key=key,
-    )
-    return frame_to_classifications(edited)
 
 
 _RISK_TITLE = "Risk"
@@ -755,24 +738,6 @@ def frame_to_risks(frame: pd.DataFrame) -> list[RiskFlag]:
         )
     return risks
 
-
-def risks_editor(risks: Sequence[RiskFlag], key: str) -> list[RiskFlag]:
-    """Editable diligence risk register."""
-    edited = st.data_editor(
-        risks_to_frame(risks),
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            _RISK_TITLE: st.column_config.TextColumn(_RISK_TITLE, width="large"),
-            _RISK_SEVERITY: st.column_config.SelectboxColumn(
-                _RISK_SEVERITY, options=list(RISK_SEVERITIES), width="small"
-            ),
-            _RISK_DESCRIPTION: st.column_config.TextColumn(_RISK_DESCRIPTION, width="large"),
-        },
-        key=key,
-    )
-    return frame_to_risks(edited)
 
 
 # --------------------------------------------------------------------------- #

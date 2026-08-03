@@ -18,7 +18,7 @@ from __future__ import annotations
 
 APP_TITLE = "FDD / QoE Diligence Workspace"
 APP_TAGLINE = "Financial Due Diligence & Quality of Earnings — Learning Platform and Case Study Workspace"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 PRECISION_POLICY = (
     "All calculations are carried at full IEEE-754 double precision. No value is "

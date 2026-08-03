@@ -423,6 +423,22 @@ in Sandbox Mode (asserting seven tabs, all six Plotly figures and the full table
 compare-to-actual-deal workflow, the review panel, the precision toggle, the DCF controls, clearing
 the workspace, and the empty-ticker guard rail.
 
+### Dependency compatibility
+
+Streamlit's layout API changed materially across the supported range: 1.4x replaced
+`use_container_width=True` with `width="stretch"` and made `height=None` an error rather than
+"size to content". Rather than pin to one release, `components.py` selects the correct keyword from
+the installed signature, so a single codebase runs clean on both. The suite is run at both ends of
+every dependency range before release:
+
+| | Older | Newer |
+|---|---|---|
+| Streamlit | 1.37 | 1.60 |
+| pandas | 2.2 | 3.0 |
+| Plotly | 5.24 | 6.9 |
+
+All three suites pass on both, with zero deprecation warnings.
+
 ---
 
 ## Deployment
