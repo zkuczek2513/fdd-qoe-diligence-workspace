@@ -29,6 +29,7 @@ import streamlit as st
 import ai_reviewer
 import components as ui
 import glossary
+import master_case
 import ui_ppa
 import ui_sec
 import workspace as ws
@@ -327,6 +328,8 @@ def render_sidebar() -> dict:
         )
         settings["case_key"] = selected[0]
 
+    render_master_case_controls()
+
     st.sidebar.divider()
     st.sidebar.subheader("Presentation")
     settings["full_precision"] = st.sidebar.toggle(
@@ -370,6 +373,47 @@ def render_sidebar() -> dict:
     st.sidebar.divider()
     render_glossary_reference()
     return settings
+
+
+def render_master_case_controls() -> None:
+    """The Master Case loader and its reset, side by side in the sidebar.
+
+    Both buttons act through ``on_click`` callbacks rather than by branching on
+    the return value. The mode and case selectors are rendered above this point,
+    so a branch here executes *after* Streamlit has instantiated them, and
+    writing their keys at that point raises ``StreamlitAPIException``. A
+    callback runs before the script re-executes, when no widget exists yet.
+    """
+    st.sidebar.divider()
+    st.sidebar.subheader("Master Case")
+    st.sidebar.caption(
+        "A completed diligence file: adjustment ledger, classification schedule, risk register, "
+        "SEC narrative scan and the ASC 805 allocation, all populated."
+    )
+
+    st.sidebar.button(
+        master_case.BUTTON_LABEL,
+        type="primary",
+        on_click=master_case.request_load,
+        **ui.sizing(element="button"),
+        help=(
+            "Switches to Sandbox Mode, loads the Project Helios master engagement and fills "
+            "every working paper. Reported FY2024 EBITDA of $15,500,000.00 bridges to Adjusted "
+            "EBITDA of $16,300,000.00 through a $1,200,000.00 legal settlement add-back and a "
+            "$400,000.00 capitalized software correction. This overwrites any work in progress "
+            "on that engagement."
+        ),
+    )
+
+    st.sidebar.button(
+        master_case.RESET_LABEL,
+        on_click=master_case.request_clear,
+        **ui.sizing(element="button"),
+        help=(
+            "Clears the master case working papers and returns that engagement to a blank set "
+            "of schedules. Safe to press when nothing is loaded."
+        ),
+    )
 
 
 def render_glossary_reference() -> None:
@@ -681,6 +725,7 @@ def render_classification_header() -> None:
 
 def render_classification_totals(classifications, full_precision: bool) -> None:
     ui.classification_legend()
+    ui.render_classified_items(classifications, full_precision)
     debt_like_total, non_operating_total = classification_totals(classifications)
     ui.metric_row(
         [
@@ -1562,6 +1607,14 @@ def main() -> None:
         engagement_id = f"case:{case_key}"
 
     initialise_seeds(engagement, engagement_id)
+
+    # The sidebar button raised a flag rather than writing state, because the
+    # engagement id it needs to namespace the write under is only resolved here.
+    if master_case.consume_pending() and master_case.is_master_case(engagement_id):
+        master_case.load(engagement, engagement_id)
+        st.rerun()
+    if master_case.consume_loaded():
+        st.success(master_case.SUCCESS_MESSAGE)
 
     header_left, header_right = st.columns([4, 1])
     with header_left:

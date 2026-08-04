@@ -169,6 +169,7 @@ reviewer's assessment all move together. That is what makes it a simulation rath
 | `components.py` | Streamlit components, editors and Plotly renderers — the only layer that touches precision |
 | `ai_reviewer.py` | Claude review panels (QoE manager, SEC director), prompts, and the deterministic heuristic fallbacks |
 | `workspace.py` | Cross-module state bus and the QoE ledger hand-off |
+| `master_case.py` | The Master Case loader and reset — populates every working paper in one click |
 | `edgar_client.py` | SEC EDGAR ingestion: CIK resolution, async filing retrieval, item extraction |
 | `text_analysis.py` | Regex risk detectors, evidence capture, readability and disclosure metrics |
 | `risk_engine.py` | Year-over-year narrative diff, diligence impact scoring, QoE ledger translation |
@@ -340,6 +341,7 @@ and the issued report stay hidden until you press **Compare to Actual Deal**.
 | **Project Helios** | Vertical SaaS — dental practice management | Growth equity recapitalization | Revenue recognition on multi-year prepaid contracts, and a capitalized software balance growing far faster than engineering headcount |
 | **Project Anvil** | Industrial manufacturing — precision components | Control buyout of a family-owned business | An inventory build during a destocking cycle, related-party facility leases, and whether the peak year or the current year represents the go-forward business |
 | **Project Cascade** | Healthcare services — multi-site optometry MSO | Secondary buyout of a platform roll-up | Which pro forma acquisition adjustments are evidenced and which are forecasts, and a receivables ledger aging faster than revenue is growing |
+| **Project Helios — Master Case** | Vertical SaaS — worked example | Sponsor-to-sponsor secondary buyout | *Not a blind case.* Ships with its working papers already completed, to show what a finished diligence file looks like |
 
 Each case teaches something the reported financial statements will not tell you directly. Between
 them they cover positive and negative adjustments, adjustments whose sign is counter-intuitive,
@@ -542,9 +544,33 @@ mechanics with worked arithmetic and formatted tables.
 > refused, so no call site has to track its own nesting depth.
 
 **Semantic colour coding.** A pandas `Styler` tints debt-like items red and non-operating assets
-green, with a legend beneath the classification schedule. Styling is presentation only: the tests
-assert the underlying values are bit-identical before and after, including a value carried to
-`2650000.123456789`.
+green, with a legend beneath the classification schedule; the SEC risk matrix is tinted by
+severity on the same mechanism. Styling is presentation only: the tests assert the underlying
+values are bit-identical before and after, including a value carried to `2650000.123456789`.
+
+> The classification schedule itself is an `st.data_editor`, and an editable grid owns its own
+> cell rendering — it takes no `Styler`. The tint is therefore applied to a read-only **Value
+> bridge inputs** companion view directly beneath it, filtered to the rows that actually carry a
+> classification. A second wrinkle: a `Styler` also overrides `st.column_config`'s numeric mask,
+> so the decimals are restated through `Styler.format` by `components.styler_number_format()`,
+> which keeps a styled table honouring the **Full raw precision** toggle like every other table.
+
+**The Master Case.** The three cases above are meant to be worked cold, which leaves a first-time
+visitor staring at an empty grid with no idea what a finished file looks like. **🚀 Load Example
+Master Case (Project Helios)** in the sidebar loads a fourth, separate engagement with every
+working paper already populated — the adjustment ledger, the classification schedule, the risk
+register, the SEC narrative risk matrix and the ASC 805 fair values — and switches the workspace
+into Sandbox Mode to show it. Reported FY2024 EBITDA of `15,500,000.00` bridges to Adjusted
+EBITDA of `16,300,000.00` through a `1,200,000.00` legal settlement add-back and a `400,000.00`
+capitalized software correction, and the allocation carries `71,000,000.00` of identifiable
+intangibles to a `132,220,000.00` goodwill residual.
+
+Both figures are *derived* — reported EBITDA falls out of the three-statement builder and the
+bridge walks it — rather than asserted, so the worked example cannot quietly disagree with the
+engine. **Clear Data / Start Fresh** beside it drops exactly the keys the loader wrote and is
+safe to press when nothing is loaded. The Module 1 working papers are materialised from the
+case's own answer key, so the loaded file and the comparison target are the same data by
+construction.
 
 **Searchable glossary.** An A–Z reference in the sidebar answers "what was that term I saw three
 tabs ago?" without leaving the workspace.
@@ -658,7 +684,11 @@ DTL-to-goodwill equivalence, bargain purchase, indefinite-lived intangibles, ope
 reconciliation) and the export layer including Unicode transliteration into the PDF core fonts.
 
 `test_app.py` additionally proves **cross-module isolation**: navigating Module 1 → 3 → 2 → 1 leaves
-the Module 1 tab structure and working papers intact.
+the Module 1 tab structure and working papers intact, and covers the **Master Case** end to end —
+the load switches modes and fills all five working papers, the headline figures render as
+`15,500,000.00` and `16,300,000.00`, the fair values reach Module 3 as `47,080,000.00` of
+identifiable net assets, the colour-coded classification view actually renders, and the reset
+drops every key it wrote without raising when pressed twice.
 
 ### Dependency compatibility
 
@@ -719,7 +749,7 @@ docker run -p 8501:8501 -e ANTHROPIC_API_KEY="sk-ant-..." fdd-qoe-workspace
 **This is an educational tool. It is not investment advice and it is not a substitute for a
 professional due diligence engagement.**
 
-- The three case studies are **fictional**. Company names, sponsors, figures and findings were
+- The four case studies are **fictional**. Company names, sponsors, figures and findings were
   constructed to illustrate specific earnings-quality patterns. Any resemblance to a real
   transaction is coincidental.
 - Live Deal Mode consumes an unofficial, community-maintained data source. Vendor coverage varies by

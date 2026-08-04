@@ -13,6 +13,8 @@ import sys
 
 from streamlit.testing.v1 import AppTest
 
+import master_case
+import workspace as ws
 from case_studies import CASE_LIBRARY, case_options
 from config import MODE_LIVE, MODE_SANDBOX, MODULE_PPA, MODULE_QOE, MODULE_SEC
 
@@ -309,6 +311,136 @@ def main() -> int:
     check(
         any("Quality of Earnings Working Papers" in heading.value for heading in app.subheader),
         "Module 1 working papers survive the round trip",
+    )
+
+    section("7b. Master Case — one-click load, propagation and reset")
+    app = start()
+    loaders = [b for b in app.sidebar.button if b.label == master_case.BUTTON_LABEL]
+    resets = [b for b in app.sidebar.button if b.label == master_case.RESET_LABEL]
+    check(len(loaders) == 1, "the Load Master Case button renders in the sidebar")
+    check(len(resets) == 1, "the Clear Data / Start Fresh button renders alongside it")
+
+    loaders[0].click().run()
+    check(assert_no_exception(app, "master case load"), "loading the master case does not raise")
+    # Streamlit 1.60 lifts a leading emoji out of the message and renders it as
+    # the callout's icon, so the body arrives without it; 1.37 leaves it in
+    # place. Assert on the text, which is identical on both.
+    confirmation = master_case.SUCCESS_MESSAGE.removeprefix("✅").strip()
+    check(
+        any(confirmation in s.value for s in app.success),
+        "the master case load confirmation renders",
+    )
+    check(
+        app.sidebar.radio[MODE_RADIO].value == MODE_SANDBOX,
+        "loading from live mode switches the workspace into Sandbox Mode",
+    )
+
+    eid = master_case.ENGAGEMENT_ID
+    for name in ("adjustments", "classifications", "risks"):
+        frame = app.session_state[f"seed::{eid}::{name}"]
+        check(not frame.empty, f"the master case populates the {name} working paper")
+    check(
+        not app.session_state[ws.key(ws.SEC, eid, "matrix")].empty,
+        "the master case populates the Module 2 risk matrix",
+    )
+    check(
+        not app.session_state[ws.key(ws.PPA, eid, "intangibles")].empty,
+        "the master case populates the Module 3 intangible schedule",
+    )
+
+    # The injected ledger must move Adjusted EBITDA by exactly the stated
+    # amounts. These are the headline numbers of the whole feature, so they are
+    # asserted bit-for-bit rather than to a tolerance.
+    metrics = {m.label: m.value for m in app.metric}
+    check(
+        metrics.get("EBITDA (as reported)") == "15,500,000.00",
+        f"master case reported EBITDA renders as 15,500,000.00 "
+        f"(got {metrics.get('EBITDA (as reported)')!r})",
+    )
+    check(
+        metrics.get("Adjusted EBITDA") == "16,300,000.00",
+        f"master case Adjusted EBITDA renders as 16,300,000.00 "
+        f"(got {metrics.get('Adjusted EBITDA')!r})",
+    )
+    check(
+        metrics.get("Net QoE Adjustments") == "800,000.00",
+        f"the two injected adjustments net to 800,000.00 "
+        f"(got {metrics.get('Net QoE Adjustments')!r})",
+    )
+
+    # The semantic tint shipped as a tested helper that no UI ever called, so
+    # the colours existed and were never seen. Assert the wiring, not just the
+    # Styler: a colour-coded view of the classified items must actually render.
+    classified = [
+        d.value
+        for d in app.dataframe
+        if "Classification" in list(getattr(d.value, "columns", []))
+    ]
+    check(
+        len(classified) >= 2,
+        f"the classification schedule renders alongside a colour-coded view "
+        f"({len(classified)} views)",
+    )
+    check(
+        any(
+            set(frame["Classification"]) <= {"Debt-Like Item", "Non-Operating Asset"}
+            and len(frame) == 3
+            for frame in classified
+        ),
+        "the colour-coded view lists only the classified value bridge inputs",
+    )
+    markdown_text = " ".join(b.value for b in app.markdown)
+    check(
+        "Value bridge inputs" in markdown_text,
+        "the colour-coded view is labelled as the value bridge inputs",
+    )
+
+    set_module(app, MODULE_SEC)
+    check(
+        assert_no_exception(app, "master case module 2"),
+        "Module 2 renders the pre-loaded matrix without a ticker",
+    )
+    check(
+        any("Pre-Loaded Narrative Risk Matrix" in h.value for h in app.subheader),
+        "the pre-loaded risk matrix is surfaced in Module 2",
+    )
+
+    set_module(app, MODULE_PPA)
+    check(assert_no_exception(app, "master case module 3"), "Module 3 renders the allocation")
+    ppa_metrics = {m.label: m.value for m in app.metric}
+    check(
+        ppa_metrics.get("Identifiable Net Assets") == "47,080,000.00",
+        f"the injected fair values produce identifiable net assets of 47,080,000.00 "
+        f"(got {ppa_metrics.get('Identifiable Net Assets')!r})",
+    )
+    check(
+        ppa_metrics.get("Deferred Tax Liability") == "17,200,000.00",
+        f"the step-ups produce a deferred tax liability of 17,200,000.00 "
+        f"(got {ppa_metrics.get('Deferred Tax Liability')!r})",
+    )
+
+    set_module(app, MODULE_QOE)
+    [b for b in app.sidebar.button if b.label == master_case.RESET_LABEL][0].click().run()
+    check(assert_no_exception(app, "master case reset"), "clearing the master case does not raise")
+    check(
+        app.session_state[f"seed::{eid}::adjustments"].empty,
+        "the reset empties the adjustment ledger",
+    )
+    check(
+        ws.key(ws.SEC, eid, "matrix") not in app.session_state,
+        "the reset drops the Module 2 risk matrix",
+    )
+    check(
+        ws.key(ws.PPA, eid, "intangibles") not in app.session_state,
+        "the reset drops the Module 3 intangible schedule",
+    )
+
+    # Pressing reset on an already-clean workspace must be a no-op, not a
+    # KeyError. Every removal in ``master_case.clear`` is a pop with a default.
+    [b for b in app.sidebar.button if b.label == master_case.RESET_LABEL][0].click().run()
+    check(
+        assert_no_exception(app, "master case double reset"),
+        "clearing an already-clear workspace is safe",
     )
 
     section("8. Live-mode module availability")

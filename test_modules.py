@@ -11,12 +11,18 @@ import sys
 
 import pandas as pd
 
+import master_case
 import ppa_engine as ppa
 import risk_engine as risk
 import text_analysis as nlp
-from case_studies import build_case_engagement
+from case_studies import answer_key_adjustments, build_case_engagement
 from export import ReportPayload, ReportSection, build_csv_bundle, build_markdown, build_pdf
-from finance_logic import is_missing, net_working_capital
+from finance_logic import (
+    adjusted_ebitda,
+    is_missing,
+    net_working_capital,
+    reported_ebitda,
+)
 
 FAILURES: list[str] = []
 
@@ -335,6 +341,108 @@ def main() -> int:
     )
     csv_bundle = build_csv_bundle(payload)
     check("Allocation" in csv_bundle, "CSV bundle includes tables")
+
+    section("6. Master Case payload")
+    master_engagement = build_case_engagement(master_case.CASE_KEY)
+    latest = master_engagement.latest_period
+
+    # The headline scenario figures must be *derived*, not asserted. Reported
+    # EBITDA comes out of the three-statement model; the bridge walks it to
+    # Adjusted EBITDA through the injected ledger.
+    master_adjustments = answer_key_adjustments(master_case.CASE_KEY)
+    base = reported_ebitda(master_engagement, latest)
+    adjusted = adjusted_ebitda(master_engagement, master_adjustments, latest)
+    check(base == 15_500_000.0, f"master case reported EBITDA derives to 15,500,000.0 ({base!r})")
+    check(
+        adjusted == 16_300_000.0,
+        f"master case Adjusted EBITDA derives to 16,300,000.0 ({adjusted!r})",
+    )
+    check(
+        adjusted - base == 800_000.0,
+        f"the injected adjustments net to exactly 800,000.0 ({adjusted - base!r})",
+    )
+    impacts = sorted(adj.impact(latest) for adj in master_adjustments)
+    check(
+        impacts == [-400_000.0, 1_200_000.0],
+        f"the ledger carries the scenario's two impacts unrounded ({impacts!r})",
+    )
+
+    # --- Module 2 payload -------------------------------------------------
+    matrix = master_case.sec_matrix()
+    check(len(matrix) == 3, f"the master case scan yields three flags ({len(matrix)})")
+    check(
+        list(matrix.columns) == list(risk.MATRIX_COLUMNS),
+        "the injected matrix matches the Module 2 editor schema exactly",
+    )
+    check(
+        not matrix[risk.COL_ACCEPT].any(),
+        "every injected flag arrives unaccepted, so none can reach the QoE ledger",
+    )
+    check(
+        (matrix[risk.COL_HAIRCUT] == 0.0).all(),
+        "every injected flag arrives with a zero haircut",
+    )
+    asc606 = matrix[matrix[risk.COL_RISK] == "ASC 606 Revenue concentration"]
+    check(len(asc606) == 1, "the ASC 606 concentration flag is present")
+    check(
+        asc606.iloc[0][risk.COL_SEVERITY] == "High",
+        "the ASC 606 concentration flag is High severity",
+    )
+    # Scored, not transcribed: 3.0 x (1 + ln(1 + 14)) x 1.5.
+    expected_score = 3.0 * (1.0 + math.log1p(14.0)) * 1.5
+    check(
+        asc606.iloc[0][risk.COL_SCORE] == expected_score,
+        f"the impact score is computed at full precision ({expected_score!r})",
+    )
+
+    # --- Module 3 payload -------------------------------------------------
+    tangible = master_case.tangible_frame(master_engagement)
+    intangible = master_case.intangible_frame()
+    step_total = ppa.tangible_step_up_total(tangible)
+    intangible_total = ppa.intangible_total(intangible)
+    check(
+        step_total == -2_200_000.0,
+        f"the tangible step-ups net to a 2,200,000.0 step-down ({step_total!r})",
+    )
+    check(
+        intangible_total == 71_000_000.0,
+        f"developed technology and customer relationships total 71,000,000.0 "
+        f"({intangible_total!r})",
+    )
+
+    result = ppa.run_ppa(
+        master_engagement,
+        tangible,
+        intangible,
+        ppa.PPAAssumptions(
+            consideration=179_300_000.0,
+            marginal_tax_rate=0.25,
+            tax_structure=ppa.STRUCTURE_STOCK,
+        ),
+    )
+    check(
+        result.deferred_tax_liability == 17_200_000.0,
+        f"the DTL is the basis difference at 25% ({result.deferred_tax_liability!r})",
+    )
+    check(
+        result.fair_value_identifiable_net_assets == 47_080_000.0,
+        f"fair value of identifiable net assets is 47,080,000.0 "
+        f"({result.fair_value_identifiable_net_assets!r})",
+    )
+    check(
+        result.goodwill == 132_220_000.0,
+        f"goodwill plugs to 132,220,000.0 at the LOI consideration ({result.goodwill!r})",
+    )
+    check(
+        not result.is_bargain_purchase,
+        "the allocation is not a bargain purchase",
+    )
+    # Forward amortization does not divide evenly; it must stay unrounded.
+    amortization = ppa.annual_amortization(intangible)
+    check(
+        amortization == 42_600_000.0 / 10.0 + 28_400_000.0 / 7.0,
+        f"annual intangible amortization retains full precision ({amortization!r})",
+    )
 
     print()
     if FAILURES:

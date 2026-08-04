@@ -63,6 +63,85 @@ def _readability_frame(current, prior, current_label: str, prior_label: str) -> 
     return pd.DataFrame(rows).set_index("Metric")
 
 
+def _render_preloaded_matrix(engagement_id: str, full_precision: bool) -> None:
+    """Show a risk matrix that was loaded rather than fetched.
+
+    A sandbox target has no EDGAR presence, so the scanner cannot run and the
+    module would otherwise be a dead end. The Master Case loader writes a matrix
+    into ``sec::<engagement>::matrix`` anyway, so a completed diligence file has
+    something to show here. It is presented read-only and labelled as
+    illustrative — the analyst never typed these counts, and pretending an
+    unfetched scan is a fetched one would teach the wrong thing.
+    """
+    matrix = st.session_state.get(ws.key(ws.SEC, engagement_id, "matrix"))
+    if not isinstance(matrix, pd.DataFrame) or matrix.empty:
+        return
+
+    st.divider()
+    st.subheader("Pre-Loaded Narrative Risk Matrix")
+    st.markdown(
+        "These flags ship with the **Master Case** to show what the scanner returns. They were "
+        "not retrieved from EDGAR — the target is fictional. Mention counts and prior-year "
+        "counts are illustrative; the impact scores are computed from them by the same formula "
+        "the live scanner uses."
+    )
+    # A Styler renders its own cell text, so the ``column_config`` numeric masks
+    # below are ignored and the counts would arrive at pandas' default float
+    # repr ("14.000000"). Restate them through ``Styler.format``, which is
+    # equally display-only — it emits strings and never writes to the frame.
+    mask = ui.styler_number_format(full_precision)
+    st.dataframe(
+        ui.style_severity(matrix, risk.COL_SEVERITY).format(
+            {
+                risk.COL_OCCURRENCES: "{:,.0f}",
+                risk.COL_PRIOR: "{:,.0f}",
+                risk.COL_SCORE: mask,
+                risk.COL_HAIRCUT: mask,
+            }
+        ),
+        hide_index=True,
+        **ui.sizing(),
+        column_config={
+            risk.COL_CATEGORY: st.column_config.TextColumn(risk.COL_CATEGORY, width="medium"),
+            risk.COL_RISK: st.column_config.TextColumn(risk.COL_RISK, width="large"),
+            risk.COL_SEVERITY: st.column_config.TextColumn(
+                risk.COL_SEVERITY,
+                help=glossary.help_for("Risk Severity", "How damaging the flag is if it is real."),
+            ),
+            risk.COL_OCCURRENCES: st.column_config.NumberColumn(
+                risk.COL_OCCURRENCES, format="%.0f", width="small"
+            ),
+            risk.COL_PRIOR: st.column_config.NumberColumn(
+                risk.COL_PRIOR, format="%.0f", width="small"
+            ),
+            risk.COL_SCORE: st.column_config.NumberColumn(
+                risk.COL_SCORE,
+                format=ui.number_format_for(full_precision),
+                help=(
+                    "Impact score = severity weight × (1 + ln(1 + mentions)) × year-over-year "
+                    "emphasis. Severity weights run Low 1.0 to Critical 4.0. Emphasis is 2.0 for "
+                    "language that is new this year and 1.5 for materially expanded language, "
+                    "because boilerplate a filer has repeated for a decade carries no diligence "
+                    "signal. Worked example — the ASC 606 row below: severity High [3.0] × "
+                    "(1 + ln(1 + 14 mentions)) [3.70805020110221] × expanded from 6 mentions "
+                    "[1.5] = Impact Score [16.686225904959944]."
+                ),
+            ),
+            risk.COL_HAIRCUT: st.column_config.NumberColumn(
+                risk.COL_HAIRCUT, format=ui.number_format_for(full_precision)
+            ),
+            risk.COL_NOTE: st.column_config.TextColumn(risk.COL_NOTE, width="large"),
+        },
+    )
+    ui.explainer("risk_scan")
+    st.caption(
+        "Every flag is **unaccepted** with a zero haircut, which is the scanner's standing "
+        "contract: it proposes, the analyst disposes. Nothing reaches the QoE ledger without an "
+        "explicit acceptance and a dollar figure — which is why loading the master case leaves "
+        "Adjusted EBITDA at the $16,300,000.00 the adjustment ledger supports."
+    )
+
+
 def render(engagement, engagement_id: str, settings: dict, seed_key_fn, widget_key_fn) -> None:
     """Render Module 2."""
     full_precision = settings["full_precision"]
@@ -83,6 +162,7 @@ def render(engagement, engagement_id: str, settings: dict, seed_key_fn, widget_k
             "the sandbox cases are fictional targets with no EDGAR presence.",
             icon="ℹ️",
         )
+        _render_preloaded_matrix(engagement_id, full_precision)
         return
 
     controls_left, controls_mid, controls_right = st.columns([1, 1, 2])

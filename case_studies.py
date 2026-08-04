@@ -1561,10 +1561,330 @@ constructed on collected cash rather than billed receivables.
 }
 
 
+PROJECT_HELIOS_MASTER: dict[str, Any] = {
+    "key": "helios_master",
+    "name": "Project Helios — Master Case",
+    "target": "Helios Practice Systems Holdings, Inc.",
+    "sector": "Vertical SaaS — worked example",
+    "deal_type": "Buy-side financial due diligence — sponsor-to-sponsor secondary buyout",
+    "currency": "USD",
+    "seed_period": "FY2021",
+    "periods": ["FY2022", "FY2023", "FY2024"],
+    "context": """
+**This is the worked master case.** Unlike the three blind cases, this engagement ships with its
+working papers already completed — the adjustment ledger, the SEC narrative risk matrix and the
+ASC 805 purchase price allocation are all populated. Load it to see what a finished diligence
+file looks like end to end before attempting a case cold.
+
+**Sponsor.** Meridian Growth Partners, exiting to Ridgeline Software Capital.
+
+**Transaction.** Ridgeline has signed a letter of intent to acquire 100% of Helios Practice
+Systems Holdings at an enterprise value of **$179.30 million**, struck at **11.0x** the
+engagement team's FY2024 Adjusted EBITDA of **$16.30 million**. The transaction is structured as
+a stock purchase, cash-free and debt-free, with a net working capital peg. No section 338(h)(10)
+election is contemplated, so the target's tax basis carries over and every fair value step-up
+creates a deferred tax liability.
+
+**Target.** Helios sells a cloud practice-management and revenue-cycle platform to multi-location
+dental service organizations, now scaled to 3,900 live practice locations. Revenue is 91%
+subscription. FY2022–FY2024 are audited.
+
+**Scope.** Quality of Earnings over FY2022–FY2024, net working capital and the peg, debt-like
+items and non-operating assets for the value bridge, a narrative risk scan of the registrant's
+filings, and a full ASC 805 allocation of the consideration to the opening balance sheet.
+""",
+    "income_statement": {
+        "revenue": {"FY2022": 61_500_000.0, "FY2023": 78_000_000.0, "FY2024": 96_000_000.0},
+        "cost_of_revenue": {
+            "FY2022": 15_375_000.0,
+            "FY2023": 18_720_000.0,
+            "FY2024": 23_040_000.0,
+        },
+        "selling_and_marketing": {
+            "FY2022": 17_835_000.0,
+            "FY2023": 22_230_000.0,
+            "FY2024": 26_880_000.0,
+        },
+        "research_and_development": {
+            "FY2022": 11_685_000.0,
+            "FY2023": 14_430_000.0,
+            "FY2024": 17_280_000.0,
+        },
+        "general_and_administrative": {
+            "FY2022": 8_610_000.0,
+            "FY2023": 10_920_000.0,
+            "FY2024": 13_300_000.0,
+        },
+        "other_operating_expense": {"FY2022": 0.0, "FY2023": 0.0, "FY2024": 0.0},
+        "depreciation": {"FY2022": 1_150_000.0, "FY2023": 1_340_000.0, "FY2024": 1_580_000.0},
+        "amortization_software": {
+            "FY2022": 1_900_000.0,
+            "FY2023": 2_600_000.0,
+            "FY2024": 3_400_000.0,
+        },
+        "amortization_intangibles": {"FY2022": 0.0, "FY2023": 0.0, "FY2024": 420_000.0},
+        "interest_expense": {"FY2022": 900_000.0, "FY2023": 1_180_000.0, "FY2024": 1_720_000.0},
+        "other_income_expense": {"FY2022": -180_000.0, "FY2023": 260_000.0, "FY2024": -320_000.0},
+        "income_tax_expense": {"FY2022": 320_000.0, "FY2023": 640_000.0, "FY2024": 980_000.0},
+    },
+    "balance_sheet": {
+        "accounts_receivable": {
+            "FY2021": 8_400_000.0,
+            "FY2022": 10_250_000.0,
+            "FY2023": 13_600_000.0,
+            "FY2024": 17_100_000.0,
+        },
+        "inventory": {"FY2021": 0.0, "FY2022": 0.0, "FY2023": 0.0, "FY2024": 0.0},
+        "prepaid_expenses": {
+            "FY2021": 1_400_000.0,
+            "FY2022": 1_750_000.0,
+            "FY2023": 2_200_000.0,
+            "FY2024": 2_750_000.0,
+        },
+        "other_current_assets": {
+            "FY2021": 900_000.0,
+            "FY2022": 1_120_000.0,
+            "FY2023": 1_400_000.0,
+            "FY2024": 1_760_000.0,
+        },
+        "ppe_net": {
+            "FY2021": 3_200_000.0,
+            "FY2022": 3_900_000.0,
+            "FY2023": 4_800_000.0,
+            "FY2024": 5_800_000.0,
+        },
+        "capitalized_software_net": {
+            "FY2021": 6_800_000.0,
+            "FY2022": 9_600_000.0,
+            "FY2023": 13_900_000.0,
+            "FY2024": 18_900_000.0,
+        },
+        "goodwill_and_intangibles_net": {
+            "FY2021": 4_200_000.0,
+            "FY2022": 4_200_000.0,
+            "FY2023": 4_200_000.0,
+            "FY2024": 9_700_000.0,
+        },
+        "other_non_current_assets": {
+            "FY2021": 850_000.0,
+            "FY2022": 980_000.0,
+            "FY2023": 1_180_000.0,
+            "FY2024": 1_450_000.0,
+        },
+        "accounts_payable": {
+            "FY2021": 2_300_000.0,
+            "FY2022": 2_750_000.0,
+            "FY2023": 3_300_000.0,
+            "FY2024": 4_000_000.0,
+        },
+        "accrued_liabilities": {
+            "FY2021": 3_900_000.0,
+            "FY2022": 4_700_000.0,
+            "FY2023": 5_900_000.0,
+            "FY2024": 7_200_000.0,
+        },
+        "deferred_revenue_current": {
+            "FY2021": 16_800_000.0,
+            "FY2022": 20_400_000.0,
+            "FY2023": 25_600_000.0,
+            "FY2024": 31_400_000.0,
+        },
+        "income_taxes_payable": {
+            "FY2021": 0.0,
+            "FY2022": 120_000.0,
+            "FY2023": 260_000.0,
+            "FY2024": 480_000.0,
+        },
+        "short_term_debt": {
+            "FY2021": 0.0,
+            "FY2022": 0.0,
+            "FY2023": 0.0,
+            "FY2024": 2_500_000.0,
+        },
+        "current_portion_long_term_debt": {
+            "FY2021": 2_000_000.0,
+            "FY2022": 2_000_000.0,
+            "FY2023": 2_500_000.0,
+            "FY2024": 3_000_000.0,
+        },
+        "other_current_liabilities": {
+            "FY2021": 800_000.0,
+            "FY2022": 940_000.0,
+            "FY2023": 1_150_000.0,
+            "FY2024": 1_400_000.0,
+        },
+        "long_term_debt": {
+            "FY2021": 12_000_000.0,
+            "FY2022": 14_000_000.0,
+            "FY2023": 18_000_000.0,
+            "FY2024": 24_000_000.0,
+        },
+        "deferred_revenue_non_current": {
+            "FY2021": 3_200_000.0,
+            "FY2022": 4_000_000.0,
+            "FY2023": 4_900_000.0,
+            "FY2024": 5_900_000.0,
+        },
+        "other_long_term_liabilities": {
+            "FY2021": 1_200_000.0,
+            "FY2022": 1_400_000.0,
+            "FY2023": 1_600_000.0,
+            "FY2024": 1_900_000.0,
+        },
+        "contributed_capital": {
+            "FY2021": 14_000_000.0,
+            "FY2022": 14_400_000.0,
+            "FY2023": 14_950_000.0,
+            "FY2024": 15_600_000.0,
+        },
+    },
+    "seed_cash": 6_500_000.0,
+    "stock_based_compensation": {
+        "FY2022": 640_000.0,
+        "FY2023": 880_000.0,
+        "FY2024": 1_340_000.0,
+    },
+    "distributions": {"FY2022": 0.0, "FY2023": 0.0, "FY2024": 0.0},
+    "management_adjusted_ebitda": {"FY2024": 16_300_000.0},
+    "answer_key": [
+        {
+            "label": "One-time legal settlement",
+            "category": "Non-Recurring / One-Time",
+            "status": ACCEPTED,
+            "authority": "Non-recurring by nature; settled and released with no ongoing exposure",
+            "impacts": {"FY2022": 0.0, "FY2023": 0.0, "FY2024": 1_200_000.0},
+            "rationale": (
+                "Settlement of a non-practicing-entity patent claim over the appointment-reminder "
+                "module, together with outside counsel fees. A full release was executed in "
+                "September 2024 and no further exposure exists, so the charge is added back to "
+                "FY2024 earnings."
+            ),
+        },
+        {
+            "label": "Aggressive capitalized software",
+            "category": "Accounting & GAAP Correction",
+            "status": ACCEPTED,
+            "authority": "ASC 350-40-25 (application development stage criteria)",
+            "impacts": {"FY2022": 0.0, "FY2023": 0.0, "FY2024": -400_000.0},
+            "rationale": (
+                "Sprint-level review of the engineering time-tracking export shows that "
+                "post-implementation maintenance and customer-specific configuration were "
+                "capitalized alongside genuine application development. Only costs incurred "
+                "during the application development stage qualify. Reclassifying the ineligible "
+                "portion to operating expense reduces FY2024 EBITDA."
+            ),
+        },
+    ],
+    "debt_like_key": [
+        {
+            "label": "Non-current deferred revenue — cash collected against unperformed obligations",
+            "amount": 5_900_000.0,
+            "classification": DEBT_LIKE,
+            "rationale": (
+                "The buyer inherits an obligation to deliver 12+ months of service for which the "
+                "seller has already collected the cash. Treated as debt-like in the value bridge."
+            ),
+        },
+        {
+            "label": "Accrued paid-time-off and unfunded bonus liability",
+            "amount": 1_900_000.0,
+            "classification": DEBT_LIKE,
+            "rationale": (
+                "Accrued but unpaid PTO and the FY2024 discretionary bonus pool, neither of which "
+                "is funded. Payable in cash by the buyer in the first post-close quarter."
+            ),
+        },
+        {
+            "label": "Cash surrender value of founder key-person life insurance",
+            "amount": 620_000.0,
+            "classification": NON_OPERATING_ASSET,
+            "rationale": (
+                "Held within other non-current assets. Not required to operate the platform and "
+                "realizable in cash; added back in the bridge."
+            ),
+        },
+    ],
+    "risk_key": [
+        {
+            "title": "ASC 606 revenue concentration",
+            "severity": "High",
+            "description": (
+                "The five largest dental service organization customers represent 34% of ARR and "
+                "contract on multi-year prepaid terms. The registrant's own filings identify the "
+                "concentration as a risk factor; the ASC 606 measurement of those arrangements "
+                "therefore drives a disproportionate share of reported revenue."
+            ),
+        },
+        {
+            "title": "Internal-use software capitalization policy",
+            "severity": "Medium",
+            "description": (
+                "Capitalized software grew 178% across the diligence period against 84% headcount "
+                "growth in engineering. The capitalization rate remains above the peer range and "
+                "supports the FY2024 GAAP correction booked in the ledger."
+            ),
+        },
+        {
+            "title": "Covenant headroom on the senior credit facility",
+            "severity": "Medium",
+            "description": (
+                "Funded debt of $29.50 million against Adjusted EBITDA of $16.30 million is 1.81x "
+                "gross. Headroom is adequate today, but the facility steps down twice before the "
+                "contemplated close."
+            ),
+        },
+    ],
+    "fdd_report_summary": """
+### Project Helios (Master Case) — Report of Factual Findings, Executive Summary
+
+**Conclusion on earnings quality.** Reported FY2024 EBITDA of **$15.500 million** normalizes to
+Adjusted EBITDA of **$16.300 million**, an uplift of **$0.800 million (5.2%)**. Management's
+represented figure agrees to our conclusion. This is a clean file, and it is presented as the
+worked example precisely because it shows what agreement looks like.
+
+**The bridge.** Two adjustments carry it. We added back **$1.200 million** of one-time patent
+litigation settlement and related counsel fees, released in full in September 2024. We deducted
+**$0.400 million** of internal-use software costs that fail the ASC 350-40 application
+development stage criteria and belong in operating expense. Both are supported by documents in
+the data room rather than by management representation.
+
+**Working capital.** Net working capital is structurally negative, the normal and favourable
+signature of a prepaid subscription model. We recommend a peg set on the trailing twelve-month
+average rather than the year-end balance.
+
+**Value bridge.** We identified **$7.800 million** of debt-like items, of which the non-current
+deferred revenue balance ($5.900 million) is the largest, against **$0.620 million** of
+non-operating assets.
+
+**Purchase price allocation.** At the LOI's $179.30 million enterprise value, the ASC 805
+allocation recognizes **$42.600 million** of customer relationships and **$28.400 million** of
+developed technology, a net tangible step-*down* of **$2.200 million** driven by writing the
+over-capitalized software balance to fair value, and a deferred tax liability of **$17.200
+million** at the 25.00% marginal rate. Because this is a stock purchase with no section
+338(h)(10) election, the target's tax basis carries over and the deferred tax liability increases
+goodwill dollar for dollar.
+
+Book net assets acquired are **negative $4.520 million** on a cash-free debt-free view — the
+normal signature of a prepaid subscription model, where deferred revenue exceeds the receivable
+and prepaid balances. Fair value of identifiable net assets is therefore **$47.080 million** and
+the residual **goodwill is $132.220 million**, or **73.74%** of consideration. A goodwill-heavy
+allocation is expected where the acquired value sits in the workforce, the platform's market
+position and the recurring revenue base rather than on the seller's balance sheet. Forward
+amortization of the recognized intangibles is **$8,317,142.8571428573** per year, a real and
+frequently overlooked drag on post-close reported earnings.
+
+**Recommendation.** We support the transaction at the contemplated value, subject to a working
+capital peg on the trailing twelve-month average and a specific indemnity for the software
+capitalization exposure through the first post-close audited period.
+""",
+}
+
+
 CASE_LIBRARY: dict[str, dict[str, Any]] = {
     PROJECT_HELIOS["key"]: PROJECT_HELIOS,
     PROJECT_ANVIL["key"]: PROJECT_ANVIL,
     PROJECT_CASCADE["key"]: PROJECT_CASCADE,
+    PROJECT_HELIOS_MASTER["key"]: PROJECT_HELIOS_MASTER,
 }
 
 

@@ -26,6 +26,8 @@ from config import (
     CHART_HEIGHT,
     CLASSIFICATION_OPTIONS,
     DEBT_LIKE,
+    DISPLAY_DECIMALS_FULL,
+    DISPLAY_DECIMALS_STANDARD,
     NON_OPERATING_ASSET,
     OPERATING_NEUTRAL,
     PALETTE,
@@ -814,6 +816,21 @@ def number_format_for(full_precision: bool) -> str:
     return number_format(full_precision)
 
 
+def styler_number_format(full_precision: bool) -> str:
+    """``Styler.format`` mask carrying the same decimals — display only.
+
+    A ``Styler`` renders its own cell text, so Streamlit's ``column_config``
+    numeric mask is ignored wherever one is passed to ``st.dataframe`` and
+    values fall back to pandas' default float repr. This is the equivalent mask
+    in ``str.format`` syntax, which keeps a styled table's decimals identical to
+    an unstyled one's and keeps both honouring the sidebar precision toggle.
+    Like every other mask in this layer it only produces a display string; the
+    underlying value is never rounded.
+    """
+    decimals = DISPLAY_DECIMALS_FULL if full_precision else DISPLAY_DECIMALS_STANDARD
+    return f"{{:,.{decimals}f}}"
+
+
 def category_bar_chart(totals: pd.DataFrame) -> go.Figure | None:
     """Horizontal bar of risk mentions by category."""
     if totals is None or totals.empty:
@@ -1027,6 +1044,63 @@ CLASSIFICATION_MARKER = {
     NON_OPERATING_ASSET: "🟢",
     OPERATING_NEUTRAL: "⚪",
 }
+
+
+def render_classified_items(items: Sequence[ClassifiedItem], full_precision: bool) -> None:
+    """Colour-coded read-only view of the items the analyst has classified.
+
+    The classification schedule itself is an ``st.data_editor``, which takes no
+    ``Styler`` — an editable grid owns its own cell rendering. So the semantic
+    tint is applied here instead, to a read-only companion view showing only the
+    rows that actually carry a classification. Operating items are excluded
+    rather than tinted neutral: this table answers "what did I put in the value
+    bridge?", and everything left operating is by definition not in it.
+
+    Styling is presentation only. The ``Styler`` emits CSS and never touches a
+    value — see ``test_glossary`` which asserts the frame is bit-identical
+    before and after, including a balance carried to ``2650000.123456789``.
+    """
+    tagged = [item for item in items if item.classification != OPERATING_NEUTRAL]
+    if not tagged:
+        st.caption(
+            "No items are classified yet. Tag a row above as debt-like or non-operating and it "
+            "appears here, colour-coded, and flows into the transaction value bridge."
+        )
+        return
+
+    st.markdown(
+        f"**Value bridge inputs** — the {len(tagged)} item(s) you have classified, colour-coded."
+    )
+    frame = classifications_to_frame(tagged)
+    styled = style_classifications(frame, _CLS_CLASS).format(
+        {_CLS_AMOUNT: styler_number_format(full_precision)}
+    )
+    st.dataframe(
+        styled,
+        hide_index=True,
+        **sizing(),
+        column_config={
+            _CLS_LABEL: st.column_config.TextColumn(_CLS_LABEL, width="large"),
+            _CLS_AMOUNT: st.column_config.NumberColumn(
+                _CLS_AMOUNT,
+                format=number_format_for(full_precision),
+                help=(
+                    "Entered as a positive number; the value bridge applies the sign. "
+                    "Example: Debt-Like Item [$5,900,000.00] reduces equity value by "
+                    "$5,900,000.00, while Non-Operating Asset [$620,000.00] increases it by "
+                    "$620,000.00."
+                ),
+            ),
+            _CLS_CLASS: st.column_config.TextColumn(
+                _CLS_CLASS,
+                help=glossary.help_for(
+                    "Debt-Like Items",
+                    "Whether the buyer inherits an obligation or a realisable asset.",
+                ),
+            ),
+            _CLS_RATIONALE: st.column_config.TextColumn(_CLS_RATIONALE, width="large"),
+        },
+    )
 
 
 def classification_legend() -> None:

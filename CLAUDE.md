@@ -63,6 +63,25 @@ either stack.
 **`DataFrame.to_markdown()` requires `tabulate`,** which pandas 2.x bundles and 3.x does not. Use
 `export.markdown_table()` instead. This broke the deployed report tab.
 
+**A widget key cannot be written after its widget has rendered this run.** Streamlit raises
+`StreamlitAPIException: st.session_state.<key> cannot be modified after the widget with key
+<key> is instantiated`. The Master Case button sits *below* the mode and case selectors in the
+sidebar, so branching on its return value is already too late to steer them. Both Master Case
+buttons therefore act through `on_click` callbacks, which Streamlit runs before the script
+re-executes, when no widget exists yet. Deleting a widget key is allowed where overwriting is
+not, but the callback avoids the distinction entirely.
+
+**A pandas `Styler` overrides `st.column_config`'s number format.** Pass a Styler to
+`st.dataframe` and the numeric mask in `column_config` is ignored — the Styler renders its own
+cell text, so values fall back to pandas' default float repr and `14` displays as `14.000000`.
+Restate the mask through `Styler.format` using `components.styler_number_format()`, which
+carries the same decimals in `str.format` syntax and still honours the precision toggle. It is
+display-only exactly like every other mask here.
+
+**Streamlit 1.60 lifts a leading emoji out of `st.success` into the callout icon; 1.37 leaves it
+in the body.** Assert on the message text, not the emoji — see `test_app.py`'s master case
+confirmation check.
+
 **Streamlit renders paired `$` as LaTeX.** Currency-dense text like "$96.0 million … $16.0 million"
 silently becomes an equation. All case narratives and review memos go through `ui.markdown()`,
 which escapes unescaped `$`. Never call `st.markdown` directly on financial prose.
@@ -110,6 +129,18 @@ construction* — `validate_cases.py` asserts `A − L − E = 0.0000000000`.
 If you change a case's numbers, re-run `validate_cases.py` and check the narrative text still
 matches the computed figures. The FDD report summaries quote specific numbers.
 
+**`helios_master` is the worked Master Case, and it is deliberately a separate case.** The three
+blind cases are meant to be attempted cold; overlaying a completed file onto one of them would
+destroy that. Its primitives are tuned so FY2024 EBITDA derives to exactly `15_500_000.0` and the
+two-item ledger walks it to exactly `16_300_000.0` — those figures are *derived by the builder*,
+not asserted anywhere, so changing a primitive silently breaks them. `test_modules.py` asserts
+both bit-for-bit.
+
+`master_case.py` materialises the Module 1 working papers from that case's **own answer key**
+rather than restating them, so the loaded file and the "Compare to Actual Deal" key cannot drift
+apart. Only the Module 2 scan output and the Module 3 fair values are declared in
+`master_case.py`, because neither has a home in the case schema.
+
 ## Tests
 
 ```bash
@@ -140,6 +171,7 @@ python test_app.py         # headless UI via streamlit.testing.v1.AppTest
 | `risk_engine.py` | YoY diff, impact scoring, QoE ledger translation |
 | `ppa_engine.py` | ASC 805 allocation, deferred tax, opening balance sheet |
 | `workspace.py` | Cross-module state bus, QoE ledger hand-off |
+| `master_case.py` | Master Case loader/reset — fills every working paper in one click |
 | `ui_sec.py` / `ui_ppa.py` | Module 2 and 3 interfaces |
 | `export.py` | PDF / Markdown / CSV reports |
 

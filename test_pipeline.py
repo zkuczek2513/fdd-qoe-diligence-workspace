@@ -8,6 +8,7 @@ review engine, and asserts that no computed value has been silently rounded.
 from __future__ import annotations
 
 import math
+import re
 import sys
 
 import pandas as pd
@@ -224,18 +225,28 @@ def main() -> int:
             "a partial schedule matches only what was submitted",
         )
 
+        # Paraphrase the case's *own* first answer-key item rather than assuming
+        # every key contains a particular adjustment: reorder its significant
+        # tokens and keep only some of them, which is what an analyst writing
+        # the same finding in their own words actually produces.
+        target = key_adjustments[0]
+        significant = [
+            word
+            for word in re.findall(r"[a-z0-9]+", target.label.lower())
+            if len(word) > 3
+        ]
         paraphrased = [
             Adjustment(
-                label="Owner compensation normalised to market rates",
-                category="Owner / Management Compensation",
+                label=" ".join(reversed(significant[:5])),
+                category=target.category,
                 period_impacts={latest: 1_000_000.0},
-                rationale="Benchmarked to a market study.",
+                rationale="Written up in the analyst's own words.",
             )
         ]
         loose = compare_to_answer_key(engagement, paraphrased, case_key, latest)
         matched_labels = [key.label for _, key, _ in loose.matched]
         check(
-            any("compensation" in label.lower() for label in matched_labels),
+            target.label in matched_labels,
             "paraphrased labels still pair with the answer key",
         )
 
@@ -340,7 +351,6 @@ def main() -> int:
     section("3. Numerical integrity audit")
     import io
     import pathlib
-    import re
     import tokenize
 
     # Tokenize rather than grep so that prose in docstrings and comments — which

@@ -13,7 +13,7 @@ import pandas as pd
 
 import components as ui
 import glossary
-from case_studies import answer_key_adjustments, build_case_engagement
+from case_studies import CASE_LIBRARY, answer_key_adjustments, build_case_engagement
 from config import DEBT_LIKE, NON_OPERATING_ASSET, OPERATING_NEUTRAL
 from finance_logic import (
     adjusted_ebitda,
@@ -128,7 +128,7 @@ def main() -> int:
           "empty frame does not raise")
 
     section("6. NUMERICAL INTEGRITY — the UI layer changed nothing")
-    for case_key in ("helios", "anvil", "cascade"):
+    for case_key in CASE_LIBRARY:
         eng = build_case_engagement(case_key)
         adj = answer_key_adjustments(case_key)
         latest = eng.latest_period
