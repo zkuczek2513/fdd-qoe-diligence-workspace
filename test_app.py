@@ -223,6 +223,49 @@ def main() -> int:
         "an empty ticker leaves the landing guidance in place",
     )
 
+    section("6b. Learning layer — tooltips, explainers, glossary")
+    app = start()
+    set_mode(app, MODE_SANDBOX)
+    check(assert_no_exception(app, "learning layer"), "sandbox renders with the learning layer")
+
+    counts = element_counts(app)
+    check(
+        counts.get("Expander", 0) >= 18,
+        f"explainers and term keys render as expanders ({counts.get('Expander', 0)})",
+    )
+
+    metric_helps = [m for m in app.metric if getattr(m, "help", None)]
+    check(
+        len(metric_helps) >= 8,
+        f"metrics carry glossary tooltips ({len(metric_helps)} of {len(app.metric)})",
+    )
+
+    slider_helps = [s for s in app.slider if getattr(s, "help", None)]
+    check(
+        len(slider_helps) >= 8,
+        f"DCF controls carry tooltips ({len(slider_helps)} of {len(app.slider)})",
+    )
+
+    markdown_text = " ".join(b.value for b in app.markdown)
+    check(
+        "How is this calculated" in " ".join(e.label for e in app.expander)
+        if hasattr(app, "expander")
+        else True,
+        "'How is this calculated?' expanders are present",
+    )
+    check(
+        "Debt-Like Item" in markdown_text or "Debt-Like Item" in " ".join(
+            c.value for c in app.caption
+        ),
+        "the classification colour legend renders",
+    )
+    check(
+        any("Glossary" in str(getattr(e, "label", "")) for e in app.sidebar.expander)
+        if hasattr(app.sidebar, "expander")
+        else True,
+        "the sidebar glossary renders",
+    )
+
     section("7. Module navigation and cross-module isolation")
     app = start()
     set_mode(app, MODE_SANDBOX)

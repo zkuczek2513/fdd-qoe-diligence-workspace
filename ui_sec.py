@@ -13,6 +13,7 @@ import streamlit as st
 import ai_reviewer
 import components as ui
 import edgar_client as edgar
+import glossary
 import risk_engine as risk
 import text_analysis as nlp
 import workspace as ws
@@ -89,12 +90,15 @@ def render(engagement, engagement_id: str, settings: dict, seed_key_fn, widget_k
         annual = st.slider(
             "Annual filings (10-K)", 2, 5, EDGAR_DEFAULT_ANNUAL_FILINGS,
             key=ws.key(ws.SEC, engagement_id, "annual"),
-            help="Two years minimum — the year-over-year diff is the point of this module.",
+            help=glossary.combine(
+                "10-K", "Two years minimum — the year-over-year diff is the point of this module."
+            ),
         )
     with controls_mid:
         quarterly = st.slider(
             "Quarterly filings (10-Q)", 0, 4, EDGAR_DEFAULT_QUARTERLY_FILINGS,
             key=ws.key(ws.SEC, engagement_id, "quarterly"),
+            help=glossary.help_for("10-Q"),
         )
     with controls_right:
         st.caption(
@@ -210,6 +214,8 @@ def render(engagement, engagement_id: str, settings: dict, seed_key_fn, widget_k
             if figure is not None:
                 st.plotly_chart(figure, **ui.chart_sizing())
 
+        ui.explainer("risk_scan")
+
         st.divider()
         st.subheader("Flagged Risks")
         for item in scored:
@@ -301,6 +307,7 @@ def render(engagement, engagement_id: str, settings: dict, seed_key_fn, widget_k
                     risk.delta_summary_frame(deltas).set_index("Section").transpose(),
                     full_precision,
                     percent_rows=("Change %", "Similarity %"),
+                    define_rows=True,
                 )
 
                 st.divider()
@@ -319,6 +326,7 @@ def render(engagement, engagement_id: str, settings: dict, seed_key_fn, widget_k
                 st.components.v1.html(
                     risk.render_delta_html(choice), height=640, scrolling=True
                 )
+                ui.explainer("narrative_delta")
 
     # -------------------------------------------------------------- matrix --
     with matrix_tab:
@@ -349,7 +357,10 @@ def render(engagement, engagement_id: str, settings: dict, seed_key_fn, widget_k
                     risk.COL_RISK, width="large", disabled=True
                 ),
                 risk.COL_SEVERITY: st.column_config.SelectboxColumn(
-                    risk.COL_SEVERITY, options=list(RISK_SEVERITIES), width="small"
+                    risk.COL_SEVERITY,
+                    options=list(RISK_SEVERITIES),
+                    width="small",
+                    help=glossary.help_for("Severity"),
                 ),
                 risk.COL_OCCURRENCES: st.column_config.NumberColumn(
                     risk.COL_OCCURRENCES, format="%.0f", disabled=True, width="small"
@@ -361,12 +372,16 @@ def render(engagement, engagement_id: str, settings: dict, seed_key_fn, widget_k
                     risk.COL_NEW, disabled=True, width="small"
                 ),
                 risk.COL_SCORE: st.column_config.NumberColumn(
-                    risk.COL_SCORE, format="%.4f", disabled=True, width="small"
+                    risk.COL_SCORE,
+                    format="%.4f",
+                    disabled=True,
+                    width="small",
+                    help=glossary.help_for("Impact Score"),
                 ),
                 risk.COL_HAIRCUT: st.column_config.NumberColumn(
                     risk.COL_HAIRCUT,
                     format=ui.number_format_for(full_precision),
-                    help="Positive figure; applied to Adjusted EBITDA as a deduction.",
+                    help=glossary.help_for("EBITDA Haircut"),
                 ),
                 risk.COL_NOTE: st.column_config.TextColumn(risk.COL_NOTE, width="large"),
             },

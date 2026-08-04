@@ -11,6 +11,7 @@ from __future__ import annotations
 import streamlit as st
 
 import components as ui
+import glossary
 import ppa_engine as ppa
 import workspace as ws
 from export import ReportPayload, ReportSection, safe_filename
@@ -66,7 +67,10 @@ def render(engagement, engagement_id: str, settings: dict) -> None:
             step=1_000_000.0,
             format="%.2f",
             key=ws.key(ws.PPA, engagement_id, "consideration"),
-            help="Imported from Module 1. Override to price a different scenario.",
+            help=glossary.combine(
+                "Purchase Price Allocation",
+                "Imported from Module 1. Override to price a different scenario.",
+            ),
         )
         st.caption(f"Imported from {provenance}.")
     with middle:
@@ -78,6 +82,7 @@ def render(engagement, engagement_id: str, settings: dict) -> None:
                 ppa.DEFAULT_MARGINAL_TAX_RATE * 100.0,
                 step=0.25,
                 key=ws.key(ws.PPA, engagement_id, "tax_rate"),
+                help=glossary.help_for("Marginal Tax Rate"),
             )
             / 100.0
         )
@@ -87,9 +92,10 @@ def render(engagement, engagement_id: str, settings: dict) -> None:
             "Transaction structure",
             ppa.TAX_STRUCTURES,
             key=ws.key(ws.PPA, engagement_id, "structure"),
-            help=(
+            help=glossary.combine(
+                "Deferred Tax Liability",
                 "Deferred tax arises only where book and tax basis diverge. A taxable asset "
-                "acquisition steps up both, so no DTL is recorded."
+                "acquisition steps up both, so no DTL is recorded.",
             ),
         )
 
@@ -138,7 +144,9 @@ def render(engagement, engagement_id: str, settings: dict) -> None:
             ppa.COL_STEP: st.column_config.NumberColumn(
                 ppa.COL_STEP,
                 format=ui.number_format_for(full_precision),
-                help="Positive steps the asset up; negative steps it down.",
+                help=glossary.combine(
+                    "Fair Value Step-Up", "Positive steps the asset up; negative steps it down."
+                ),
             ),
             ppa.COL_FAIR: st.column_config.NumberColumn(
                 ppa.COL_FAIR, format=ui.number_format_for(full_precision), disabled=True
@@ -164,12 +172,20 @@ def render(engagement, engagement_id: str, settings: dict) -> None:
         hide_index=True,
         **ui.sizing(element="data_editor"),
         column_config={
-            ppa.COL_INTANGIBLE: st.column_config.TextColumn(ppa.COL_INTANGIBLE, width="large"),
+            ppa.COL_INTANGIBLE: st.column_config.TextColumn(
+                ppa.COL_INTANGIBLE,
+                width="large",
+                help=glossary.help_for("Identifiable Intangible Assets"),
+            ),
             ppa.COL_INT_FAIR: st.column_config.NumberColumn(
                 ppa.COL_INT_FAIR, format=ui.number_format_for(full_precision)
             ),
             ppa.COL_INT_LIFE: st.column_config.NumberColumn(
-                ppa.COL_INT_LIFE, format="%.1f", help="Zero denotes an indefinite-lived asset."
+                ppa.COL_INT_LIFE,
+                format="%.1f",
+                help=glossary.combine(
+                    "Amortization", "A life of zero denotes an indefinite-lived asset."
+                ),
             ),
             ppa.COL_INT_METHOD: st.column_config.TextColumn(ppa.COL_INT_METHOD, width="medium"),
             ppa.COL_INT_AMORT: st.column_config.NumberColumn(
@@ -235,11 +251,13 @@ def render(engagement, engagement_id: str, settings: dict) -> None:
 
     bridge_left, bridge_right = st.columns([2, 3])
     with bridge_left:
-        ui.render_frame(result.bridge, full_precision)
+        ui.render_frame(result.bridge, full_precision, define_rows=True)
     with bridge_right:
         figure = ui.ppa_bridge_chart(result.steps, currency)
         if figure is not None:
             st.plotly_chart(figure, **ui.chart_sizing())
+
+    ui.explainer("ppa")
 
     for note in result.notes:
         st.info(note, icon="📘")
@@ -271,6 +289,7 @@ def render(engagement, engagement_id: str, settings: dict) -> None:
             ),
         },
     )
+    ui.explainer("opening_bs")
 
     # -------------------------------------------------- amortization --
     schedule = ppa.amortization_schedule(intangible_view)
@@ -290,7 +309,7 @@ def render(engagement, engagement_id: str, settings: dict) -> None:
             f"Straight-line amortization of the recognised intangibles is "
             f"{ui.format_value(annual, full_precision)} per year.{caption_ebitda}"
         )
-        ui.render_frame(schedule, full_precision)
+        ui.render_frame(schedule, full_precision, define_rows=True)
 
     ws.publish(
         engagement_id,

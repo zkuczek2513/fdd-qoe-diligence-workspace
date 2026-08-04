@@ -18,12 +18,15 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import glossary
 from config import (
     ADJUSTMENT_CATEGORIES,
     ADJUSTMENT_STATUSES,
     CHART_FONT_FAMILY,
     CHART_HEIGHT,
     CLASSIFICATION_OPTIONS,
+    DEBT_LIKE,
+    NON_OPERATING_ASSET,
     OPERATING_NEUTRAL,
     PALETTE,
     RISK_SEVERITIES,
@@ -138,14 +141,12 @@ def numeric_columns(
     percent_set = set(percent_columns)
     config: dict[str, object] = {}
     for column in columns:
-        if column in percent_set:
-            config[column] = st.column_config.NumberColumn(
-                column, format=percent_format(full_precision)
-            )
-        else:
-            config[column] = st.column_config.NumberColumn(
-                column, format=number_format(full_precision)
-            )
+        # Period headers (FY2024) resolve to nothing and simply carry no tooltip.
+        tooltip = glossary.help_for(str(column))
+        mask = percent_format(full_precision) if column in percent_set else number_format(
+            full_precision
+        )
+        config[column] = st.column_config.NumberColumn(column, format=mask, help=tooltip)
     return config
 
 
@@ -154,12 +155,19 @@ def render_frame(
     full_precision: bool,
     percent_rows: Sequence[str] = (),
     height: int | None = None,
+    explain: str = "",
+    define_rows: bool = False,
 ) -> None:
     """Render a period-indexed working paper.
 
     Rows whose label matches ``percent_rows`` are masked as percentages. Because
     Streamlit column formats apply per column rather than per row, percentage
     rows are formatted into strings here; the source frame is left untouched.
+
+    ``explain`` names a glossary explainer rendered beneath the table.
+    ``define_rows`` appends a term key for the row labels — necessary because
+    Streamlit can tooltip column headers but not row headers, and in these
+    working papers the concepts live in the index.
     """
     if frame.empty:
         st.info("No data is available for this schedule.")
@@ -182,6 +190,7 @@ def render_frame(
                 else:
                     rendered.loc[row_label, column] = f"{value:,.{decimals}f}"
         st.dataframe(rendered, **sizing(height))
+        _render_frame_help(frame, explain, define_rows)
         return
 
     st.dataframe(
@@ -189,6 +198,7 @@ def render_frame(
         **sizing(height),
         column_config=numeric_columns(display.columns, full_precision),
     )
+    _render_frame_help(frame, explain, define_rows)
 
 
 def render_statement(
@@ -222,14 +232,22 @@ def render_statement(
             )
 
 
-def metric_row(entries: Sequence[tuple[str, str, str | None]]) -> None:
-    """Render a row of headline metrics as (label, value, caption) triples."""
+def metric_row(entries: Sequence[tuple]) -> None:
+    """Render a row of headline metrics with glossary tooltips attached.
+
+    Each entry is ``(label, value, caption)`` or ``(label, value, caption,
+    help_text)``. When no explicit help is given the label is resolved against
+    the glossary, so a metric named "Adjusted EBITDA" acquires its definition
+    automatically and stays in sync with every other use of the term.
+    """
     if not entries:
         return
     columns = st.columns(len(entries))
-    for column, (label, value, caption) in zip(columns, entries):
+    for column, entry in zip(columns, entries):
+        label, value, caption = entry[0], entry[1], entry[2]
+        explicit = entry[3] if len(entry) > 3 else ""
         with column:
-            st.metric(label, value)
+            st.metric(label, value, help=explicit or glossary.help_for(label))
             if caption:
                 st.caption(caption)
 
@@ -910,3 +928,113 @@ def render_export_buttons(payload, filename_stem: str, key_prefix: str = "") -> 
             key=f"{key_prefix}::csv",
             **sizing(element="download_button"),
         )
+
+
+# --------------------------------------------------------------------------- #
+# Learning aids
+# --------------------------------------------------------------------------- #
+
+
+def _collapsible(title: str, body: str) -> None:
+    """Render body inside an expander, falling back to inline when nested.
+
+    Streamlit forbids an expander inside another expander — and enforces it
+    inconsistently across the supported version range (1.37 raises, 1.60 does
+    not). Rather than make every call site track its own nesting depth, the
+    expander is attempted and the content is rendered inline if it is refused.
+    """
+    try:
+        container = st.expander(title, expanded=False)
+    except Exception:  # noqa: BLE001 - nesting refused; render inline instead
+        st.caption(title)
+        st.markdown(body)
+        return
+    with container:
+        st.markdown(body)
+
+
+def explainer(key: str, title: str = "📖 How is this calculated?") -> None:
+    """Render a muted, collapsed explainer beneath an analytical component."""
+    body = glossary.explainer(key)
+    if body:
+        _collapsible(title, body)
+
+
+def term_key_expander(labels: Sequence[str], title: str = "📖 What do these rows mean?") -> None:
+    """Definition list for row labels.
+
+    Streamlit can attach tooltips to column headers but not to row headers, and
+    these working papers carry their concepts in the index. This is the
+    equivalent affordance.
+    """
+    body = glossary.term_key(*[str(label) for label in labels])
+    if body:
+        _collapsible(title, body)
+
+
+def _render_frame_help(frame: pd.DataFrame, explain: str, define_rows: bool) -> None:
+    if define_rows and frame is not None and not frame.empty:
+        term_key_expander(list(frame.index))
+    if explain:
+        explainer(explain)
+
+
+# --------------------------------------------------------------------------- #
+# Semantic colour coding
+# --------------------------------------------------------------------------- #
+
+_CLASSIFICATION_TINT = {
+    DEBT_LIKE: "background-color: rgba(179, 53, 44, 0.10); color: #8E2A20;",
+    NON_OPERATING_ASSET: "background-color: rgba(27, 127, 94, 0.10); color: #125C43;",
+    OPERATING_NEUTRAL: "color: #5A6B7B;",
+}
+
+_SEVERITY_TINT = {
+    "Critical": "background-color: rgba(179, 53, 44, 0.16); color: #8E2A20; font-weight: 600;",
+    "High": "background-color: rgba(192, 138, 46, 0.16); color: #7A5410;",
+    "Medium": "background-color: rgba(192, 138, 46, 0.08); color: #5A6B7B;",
+    "Low": "color: #5A6B7B;",
+}
+
+
+def style_by_category(frame: pd.DataFrame, column: str, tints: dict[str, str]):
+    """Tint whole rows by the value of one categorical column.
+
+    Returns a pandas ``Styler``. Styling is presentation only — the underlying
+    frame is untouched and no value is rounded or altered.
+    """
+    if frame is None or frame.empty or column not in frame.columns:
+        return frame
+
+    def paint(row: pd.Series) -> list[str]:
+        return [tints.get(str(row[column]), "")] * len(row)
+
+    return frame.style.apply(paint, axis=1)
+
+
+def style_classifications(frame: pd.DataFrame, classification_column: str):
+    """Debt-like rows tinted red, non-operating assets green, operating neutral."""
+    return style_by_category(frame, classification_column, _CLASSIFICATION_TINT)
+
+
+def style_severity(frame: pd.DataFrame, severity_column: str):
+    """Risk rows tinted by severity."""
+    return style_by_category(frame, severity_column, _SEVERITY_TINT)
+
+
+CLASSIFICATION_MARKER = {
+    DEBT_LIKE: "🔴",
+    NON_OPERATING_ASSET: "🟢",
+    OPERATING_NEUTRAL: "⚪",
+}
+
+
+def classification_legend() -> None:
+    """Colour key for the classification schedule."""
+    st.caption(
+        "🔴 **Debt-Like Item** — an obligation the buyer inherits and settles in cash; "
+        "**reduces** equity value.  \n"
+        "🟢 **Non-Operating Asset** — not needed to run the business and realisable; "
+        "**increases** equity value.  \n"
+        "⚪ **Operating** — part of normal working capital; no effect on the value bridge."
+    )

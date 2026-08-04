@@ -506,6 +506,51 @@ buyer's model, and routinely a year-one surprise.
 
 ---
 
+## The learning layer
+
+The workspace is built for someone who has never seen a quality of earnings analysis, so every
+technical term carries its own explanation in place.
+
+**One definition, attached everywhere.** `glossary.py` holds 76 terms, each following the same
+three-part contract:
+
+1. **Plain-English definition** — assumes no accounting training
+2. **Formula** — the exact calculation, where one exists
+3. **Worked example** — concrete numbers, so the formula stops being abstract
+
+A term is defined once and resolved by label, so the tooltip on the *Adjusted EBITDA* metric, the
+*Adjusted EBITDA* column header and the *Adjusted EBITDA Margin %* row all draw from the same
+entry. Labels resolve through aliases and substring matching, so `"EBITDA (as reported)"` finds
+**EBITDA** while a period header like `"FY2024"` correctly resolves to nothing and carries no
+tooltip.
+
+**Where the tooltips land.** 39 `help=` attachments across metrics, sliders, checkboxes, radios
+and `st.column_config` column headers.
+
+**Contextual explainers.** Ten `📖 How is this calculated?` expanders sit beneath the major
+analytical components — the QoE bridge, NWC schedule, efficiency metrics, value bridge, DCF, PPA,
+opening balance sheet, risk scan, narrative delta and case comparison — walking through the
+mechanics with worked arithmetic and formatted tables.
+
+> **One Streamlit constraint worth naming.** `st.column_config` attaches tooltips to *column*
+> headers, but these working papers are period-indexed: the concepts live in the row index.
+> Row-header tooltips are not possible, so `render_frame(define_rows=True)` appends a term key
+> listing every row's definition — the equivalent affordance.
+>
+> Expanders also cannot nest, and Streamlit enforces this inconsistently across the supported
+> range (1.37 raises, 1.60 does not). `_collapsible` attempts the expander and renders inline if
+> refused, so no call site has to track its own nesting depth.
+
+**Semantic colour coding.** A pandas `Styler` tints debt-like items red and non-operating assets
+green, with a legend beneath the classification schedule. Styling is presentation only: the tests
+assert the underlying values are bit-identical before and after, including a value carried to
+`2650000.123456789`.
+
+**Searchable glossary.** An A–Z reference in the sidebar answers "what was that term I saw three
+tabs ago?" without leaving the workspace.
+
+---
+
 ## Numerical integrity policy
 
 **No value is rounded anywhere in this codebase.** `round()`, `numpy.round`, `DataFrame.round` and
@@ -586,6 +631,7 @@ python validate_cases.py   # statement articulation + derived ratio diagnostics
 python test_pipeline.py    # analytical pipeline, comparison engine, precision audit
 python test_app.py         # headless UI via streamlit.testing.v1.AppTest
 python test_modules.py     # Module 2 and 3 engines and their Module 1 integration
+python test_glossary.py    # glossary contract, colour coding, numerical integrity
 ```
 
 `validate_cases.py` asserts that every case balances and foots, and prints revenue, EBITDA, Adjusted

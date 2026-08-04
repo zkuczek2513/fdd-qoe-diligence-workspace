@@ -28,6 +28,7 @@ import streamlit as st
 
 import ai_reviewer
 import components as ui
+import glossary
 import ui_ppa
 import ui_sec
 import workspace as ws
@@ -160,7 +161,11 @@ def clear_working_papers(engagement_id: str) -> None:
 def adjustment_columns(periods, full_precision: bool) -> dict:
     config: dict = {
         "Adjustment": st.column_config.TextColumn(
-            "Adjustment", width="large", help="Describe the normalization in report language."
+            "Adjustment",
+            width="large",
+            help=glossary.combine(
+                "QoE Adjustment", "Describe the normalization in report language."
+            ),
         ),
         "Category": st.column_config.SelectboxColumn(
             "Category", options=list(ADJUSTMENT_CATEGORIES), width="medium"
@@ -198,7 +203,14 @@ def classification_columns(full_precision: bool) -> dict:
             help="Enter a positive amount; the value bridge applies the sign by classification.",
         ),
         "Classification": st.column_config.SelectboxColumn(
-            "Classification", options=list(CLASSIFICATION_OPTIONS), width="medium"
+            "Classification",
+            options=list(CLASSIFICATION_OPTIONS),
+            width="medium",
+            help=glossary.combine(
+                "Debt-Like Items",
+                "🔴 Debt-Like reduces equity value · 🟢 Non-Operating increases it · "
+                "⚪ Operating has no bridge effect.",
+            ),
         ),
         "Diligence Rationale": st.column_config.TextColumn("Diligence Rationale", width="large"),
     }
@@ -208,7 +220,10 @@ def risk_columns() -> dict:
     return {
         "Risk": st.column_config.TextColumn("Risk", width="large"),
         "Severity": st.column_config.SelectboxColumn(
-            "Severity", options=list(RISK_SEVERITIES), width="small"
+            "Severity",
+            options=list(RISK_SEVERITIES),
+            width="small",
+            help=glossary.help_for("Severity"),
         ),
         "Description": st.column_config.TextColumn("Description", width="large"),
     }
@@ -351,7 +366,42 @@ def render_sidebar() -> dict:
         value=ai_reviewer.DEFAULT_EFFORT,
         disabled=not configured,
     )
+
+    st.sidebar.divider()
+    render_glossary_reference()
     return settings
+
+
+def render_glossary_reference() -> None:
+    """Searchable A-Z glossary in the sidebar.
+
+    Hover tooltips answer "what is this?" in place; this answers "what was that
+    term I saw three tabs ago?" without making the learner leave the workspace.
+    """
+    with st.sidebar.expander("📖 Glossary", expanded=False):
+        query = st.text_input(
+            "Search terms",
+            key="glossary_search",
+            placeholder="e.g. goodwill, DSO, ASC 606",
+            label_visibility="collapsed",
+        )
+        terms = glossary.all_terms()
+        needle = (query or "").strip().lower()
+        if needle:
+            terms = [
+                term
+                for term in terms
+                if needle in term.name.lower() or needle in term.definition.lower()
+            ]
+        st.caption(f"{len(terms)} of {len(glossary.all_terms())} terms")
+        # Plain markdown rather than nested popovers: Streamlit disallows an
+        # expander inside an expander, and popover nesting is unreliable across
+        # the supported version range.
+        for term in terms[:40]:
+            ui.markdown(term.markdown())
+            st.markdown("")
+        if len(terms) > 40:
+            st.caption(f"… and {len(terms) - 40} more. Refine the search to narrow the list.")
 
 
 # --------------------------------------------------------------------------- #
@@ -413,6 +463,7 @@ def render_overview(engagement, adjustments, full_precision: bool, case=None) ->
         margin_summary(engagement, adjustments),
         full_precision,
         percent_rows=("EBITDA Margin %", "Adjusted EBITDA Margin %"),
+        define_rows=True,
     )
 
     figure = ui.earnings_quality_chart(
@@ -523,7 +574,12 @@ def render_qoe_body(engagement, engagement_id: str, adjustments, full_precision:
 
     st.divider()
     st.subheader("Bridge: GAAP Net Income to Adjusted EBITDA")
-    ui.render_frame(build_qoe_bridge(engagement, adjustments), full_precision)
+    ui.render_frame(
+        build_qoe_bridge(engagement, adjustments),
+        full_precision,
+        explain="qoe_bridge",
+        define_rows=True,
+    )
 
     rejected = [adjustment for adjustment in adjustments if not adjustment.is_accepted]
     if rejected:
@@ -546,7 +602,11 @@ def render_nwc(engagement, engagement_id: str, full_precision: bool) -> tuple[fl
     )
 
     ui.render_frame(
-        build_nwc_schedule(engagement), full_precision, percent_rows=("NWC as % of Revenue",)
+        build_nwc_schedule(engagement),
+        full_precision,
+        percent_rows=("NWC as % of Revenue",),
+        explain="nwc",
+        define_rows=True,
     )
 
     lookback = st.slider(
@@ -555,9 +615,10 @@ def render_nwc(engagement, engagement_id: str, full_precision: bool) -> tuple[fl
         max_value=max(1, len(engagement.periods)),
         value=min(3, len(engagement.periods)),
         key=f"peg_lookback::{engagement_id}",
-        help=(
-            "The peg is the trailing average of net working capital. Setting it on the year-end "
-            "balance alone flatters a seller whose position has been managed into the close."
+        help=glossary.combine(
+            "NWC Peg",
+            "Setting the peg on the year-end balance alone flatters a seller whose position has "
+            "been managed into the close, so a trailing average is used.",
         ),
     )
     peg = normalized_nwc_peg(engagement, lookback)
@@ -596,7 +657,7 @@ def render_nwc(engagement, engagement_id: str, full_precision: bool) -> tuple[fl
     st.divider()
     st.subheader("Trailing Efficiency Metrics")
     metrics = build_efficiency_metrics(engagement)
-    ui.render_frame(metrics, full_precision)
+    ui.render_frame(metrics, full_precision, explain="efficiency", define_rows=True)
     efficiency_figure = ui.efficiency_trend_chart(metrics)
     if efficiency_figure is not None:
         st.plotly_chart(efficiency_figure, **ui.chart_sizing())
@@ -619,6 +680,7 @@ def render_classification_header() -> None:
 
 
 def render_classification_totals(classifications, full_precision: bool) -> None:
+    ui.classification_legend()
     debt_like_total, non_operating_total = classification_totals(classifications)
     ui.metric_row(
         [
@@ -672,6 +734,7 @@ def render_valuation(
             10,
             DCF_DEFAULTS["horizon_years"],
             key=f"dcf_horizon::{engagement_id}",
+            help=glossary.help_for("Discounted Cash Flow"),
         )
         revenue_cagr = (
             st.slider(
@@ -681,6 +744,7 @@ def render_valuation(
                 DCF_DEFAULTS["revenue_cagr"] * 100.0,
                 step=0.25,
                 key=f"dcf_cagr::{engagement_id}",
+                help=glossary.help_for("Discounted Cash Flow"),
             )
             / 100.0
         )
@@ -692,6 +756,7 @@ def render_valuation(
                 DCF_DEFAULTS["target_ebitda_margin"] * 100.0,
                 step=0.25,
                 key=f"dcf_margin::{engagement_id}",
+                help=glossary.help_for("EBITDA Margin"),
             )
             / 100.0
         )
@@ -713,6 +778,7 @@ def render_valuation(
                 DCF_DEFAULTS["capex_pct_revenue"] * 100.0,
                 step=0.1,
                 key=f"dcf_capex::{engagement_id}",
+                help=glossary.help_for("Capital Expenditure"),
             )
             / 100.0
         )
@@ -724,6 +790,7 @@ def render_valuation(
                 DCF_DEFAULTS["da_pct_revenue"] * 100.0,
                 step=0.1,
                 key=f"dcf_da::{engagement_id}",
+                help=glossary.help_for("Amortization"),
             )
             / 100.0
         )
@@ -735,6 +802,7 @@ def render_valuation(
                 DCF_DEFAULTS["nwc_pct_revenue"] * 100.0,
                 step=0.5,
                 key=f"dcf_nwc::{engagement_id}",
+                help=glossary.help_for("Net Working Capital"),
             )
             / 100.0
         )
@@ -746,6 +814,7 @@ def render_valuation(
                 DCF_DEFAULTS["tax_rate"] * 100.0,
                 step=0.5,
                 key=f"dcf_tax::{engagement_id}",
+                help=glossary.help_for("NOPAT"),
             )
             / 100.0
         )
@@ -758,11 +827,15 @@ def render_valuation(
                 DCF_DEFAULTS["wacc"] * 100.0,
                 step=0.1,
                 key=f"dcf_wacc::{engagement_id}",
+                help=glossary.help_for("WACC"),
             )
             / 100.0
         )
         terminal_method = st.radio(
-            "Terminal value method", TERMINAL_METHODS, key=f"dcf_tv_method::{engagement_id}"
+            "Terminal value method",
+            TERMINAL_METHODS,
+            key=f"dcf_tv_method::{engagement_id}",
+            help=glossary.help_for("Terminal Value"),
         )
         terminal_multiple = st.slider(
             "Exit EBITDA multiple",
@@ -772,6 +845,7 @@ def render_valuation(
             step=0.25,
             key=f"dcf_tv_multiple::{engagement_id}",
             disabled=terminal_method != TERMINAL_METHOD_MULTIPLE,
+            help=glossary.help_for("Exit Multiple"),
         )
         terminal_growth = (
             st.slider(
@@ -782,6 +856,7 @@ def render_valuation(
                 step=0.1,
                 key=f"dcf_tv_growth::{engagement_id}",
                 disabled=terminal_method != TERMINAL_METHOD_GORDON,
+                help=glossary.help_for("Gordon Growth"),
             )
             / 100.0
         )
@@ -789,6 +864,7 @@ def render_valuation(
             "Mid-year discounting convention",
             value=DCF_DEFAULTS["mid_year_convention"],
             key=f"dcf_midyear::{engagement_id}",
+            help=glossary.help_for("Mid-Year Convention"),
         )
 
     result = run_dcf(
@@ -837,7 +913,11 @@ def render_valuation(
 
     if not result.schedule.empty:
         with st.expander("Projection schedule", expanded=False):
-            ui.render_frame(result.schedule, full_precision, percent_rows=("EBITDA Margin %",))
+            ui.render_frame(
+                result.schedule, full_precision, percent_rows=("EBITDA Margin %",)
+            )
+            st.caption("Row definitions are in the explainer below.")
+        ui.explainer("dcf")
         figure = ui.dcf_chart(result.schedule, engagement.currency)
         if figure is not None:
             st.plotly_chart(figure, **ui.chart_sizing())
@@ -848,6 +928,7 @@ def render_valuation(
         "Include the working capital true-up against the peg",
         value=True,
         key=f"bridge_nwc::{engagement_id}",
+        help=glossary.help_for("NWC Peg"),
     )
 
     debt_like_total, non_operating_total = classification_totals(classifications)
@@ -864,7 +945,7 @@ def render_valuation(
 
     bridge_left, bridge_right = st.columns([2, 3])
     with bridge_left:
-        ui.render_frame(bridge.table, full_precision)
+        ui.render_frame(bridge.table, full_precision, define_rows=True)
     with bridge_right:
         figure = ui.value_bridge_chart(bridge.steps, engagement.currency)
         if figure is not None:
@@ -876,6 +957,7 @@ def render_valuation(
             ("Implied Equity Value", ui.format_value(bridge.equity_value, full_precision), None),
         ]
     )
+    ui.explainer("value_bridge")
 
     return {
         "enterprise_value": result.enterprise_value,
@@ -1012,6 +1094,8 @@ def render_comparison(
         for risk in answer_key_risks(case_key):
             with st.expander(f"{ui.severity_badge(risk.severity)} {risk.title}", expanded=False):
                 ui.markdown(risk.description)
+
+    ui.explainer("comparison")
 
     st.divider()
     st.subheader("Actual FDD Report Summary")

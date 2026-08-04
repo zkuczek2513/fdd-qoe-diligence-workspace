@@ -21,7 +21,7 @@ APP_TAGLINE = (
     "Financial Due Diligence & Quality of Earnings · SEC Narrative Risk · ASC 805 Purchase "
     "Price Allocation"
 )
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 
 PRECISION_POLICY = (
     "All calculations are carried at full IEEE-754 double precision. No value is "
